@@ -1,0 +1,9 @@
+{
+  "salon": {"id":"your-salon-id","name":"Salon adını girin","description":"Salon açıklamasını girin","address":"Gerçek salon adresini girin","phone":"+900000000000","timezone":"Europe/Istanbul","currency":"TRY","bookingDays":30},
+  "bufferMinutes":10,
+  "services":[{"id":"haircut","name":"Saç kesimi","description":"Hizmet açıklamasını girin","durationMinutes":30,"price":{"amount":65000,"currency":"TRY"},"deposit":{"amount":0,"currency":"TRY"},"active":true}],
+  "staff":[{"id":"barber-1","name":"Çalışan adını girin","title":"Berber","serviceIds":["haircut"],"active":true}],
+  "chairs":[{"id":"chair-1","name":"Birinci koltuk","active":true}],
+  "schedules":[],
+  "closedDates":[]
+}

@@ -1,0 +1,15 @@
+node_modules/
+build/
+.react-router/
+coverage/
+test-results/
+playwright-report/
+.taste-skill/
+.env.local
+.env.*.local
+*.log
+.local/
+backend/dist/
+backend/.env
+backend/.env.*
+!backend/.env.example

@@ -1,0 +1,50 @@
+@layer components {
+  .payment-settings {
+    max-width: 60rem;
+  }
+  .payment-settings-section {
+    display: grid;
+    gap: var(--space-6);
+    padding-block: var(--space-8);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .payment-settings-section h2,
+  .payment-preview h2 {
+    font-size: var(--text-section);
+    margin-bottom: var(--space-3);
+  }
+  .payment-settings-section > *,
+  .payment-settings input {
+    min-width: 0;
+  }
+  .payment-connection-status {
+    display: inline-block;
+    margin-top: var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-raised);
+    color: var(--color-muted);
+  }
+  .payment-preview {
+    border-left: 3px solid var(--color-accent);
+    padding: var(--space-6);
+    background: var(--color-surface);
+    overflow-wrap: anywhere;
+  }
+  .payment-preview dl {
+    display: grid;
+    gap: var(--space-4);
+    margin-block: var(--space-6);
+  }
+  .payment-preview dt {
+    color: var(--color-muted);
+  }
+  .payment-preview dd {
+    margin: 0;
+  }
+  @media (min-width: 64rem) {
+    .payment-settings-section {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+      gap: var(--space-12);
+    }
+  }
+}

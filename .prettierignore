@@ -1,0 +1,13 @@
+node_modules
+.local
+backend/dist
+build
+.react-router
+.taste-skill
+test-results
+playwright-report
+package-lock.json
+public/mockServiceWorker.js
+contracts/openapi.json
+AGENTS.md
+frontend.md

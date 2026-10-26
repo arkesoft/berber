@@ -1,0 +1,73 @@
+@layer tokens {
+  :root {
+    /* Brand primitives: shared by the public site and every product screen. */
+    --brand-black: #080808;
+    --brand-white: #fff;
+    --brand-lime: #e7f465;
+    --brand-lime-hover: #f0fa9c;
+    --neutral-50: #f4f4f1;
+    --neutral-100: #eaeae5;
+    --neutral-200: #d6d6d0;
+    --neutral-600: #50504d;
+    --neutral-900: #191919;
+    --color-ground: var(--neutral-50);
+    --color-surface: var(--brand-white);
+    --color-raised: var(--neutral-100);
+    --color-text: #111;
+    --color-muted: var(--neutral-600);
+    --color-border: var(--neutral-200);
+    --color-control: #7b7b75;
+    --color-primary: var(--brand-lime);
+    --color-primary-hover: var(--brand-lime-hover);
+    --color-on-primary: var(--brand-black);
+    --color-accent: #555900;
+    --color-selected: #f1f5cc;
+    --color-danger: #982b31;
+    --color-success: #2c6036;
+    --color-warning: #745407;
+    --color-focus: #555900;
+    --color-inverse: var(--brand-black);
+    --color-on-inverse: var(--brand-white);
+    --color-inverse-muted: #c3c3c3;
+    --color-inverse-line: #484848;
+    --color-backdrop: #0009;
+    --color-image-placeholder: #303030;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+    --font-body: "Outfit Variable", sans-serif;
+    --text-body: 1rem;
+    --text-section: 1.5rem;
+    --text-title: clamp(2rem, 4vw, 3rem);
+    --button-height: 3.25rem;
+    --button-radius: 100px;
+    --control-radius: 0.25rem;
+    --panel-radius: 0;
+    --page-width: 72rem;
+    --page-gutter: clamp(1.25rem, 5vw, 4rem);
+    --motion-fast: 180ms;
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --color-ground: var(--neutral-900);
+    --color-surface: #222;
+    --color-raised: #2d2d2b;
+    --color-text: var(--neutral-50);
+    --color-muted: #bcbcb7;
+    --color-border: #484845;
+    --color-control: #8e8e87;
+    --color-accent: var(--brand-lime);
+    --color-selected: #32361d;
+    --color-danger: #ffb0b5;
+    --color-success: #afd5b5;
+    --color-warning: #edd582;
+    --color-focus: var(--brand-lime);
+    color-scheme: dark;
+  }
+}

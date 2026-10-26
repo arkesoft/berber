@@ -197,3 +197,12 @@ Aşağıdakileri Codex **kesin seçim sanmayacak**: Backend dili/framework, ORM,
 ---
 
 **Yönetici ilke:** *MVP'de ürün kapsamını küçült; veri bütünlüğünü, güvenliği, modül sınırlarını, testleri ve production disiplinini küçültme.*
+
+## Frontend Instructions
+
+For every frontend, UI, UX, styling, or
+responsive design task:
+
+1. Read `frontend.md` before starting.
+2. Follow its design principles and skill rules.
+3. Treat `frontend.md` as mandatory project guidance.
