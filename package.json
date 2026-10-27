@@ -6,6 +6,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "start:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1",
     "dev": "react-router dev --host 127.0.0.1",
     "dev:backend": "react-router dev --mode backend --host 127.0.0.1 --port 5174",
     "build": "react-router build",

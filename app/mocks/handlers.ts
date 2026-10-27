@@ -4,6 +4,26 @@ import * as s from "../contracts/schemas";
 import { seedData, demoToday } from "./data";
 
 let data = seedData();
+let paymentPreferences = {
+  version: 1,
+  depositEnabled: true,
+  onlinePaymentVisible: true,
+};
+function seedCollections(): z.infer<typeof s.collectionEntry>[] {
+  return data.reservations
+    .filter((r) => (r.received?.amount ?? 0) > 0)
+    .map((r) => ({
+      id: `collection-${r.id}`,
+      reservationId: r.id,
+      actorId: "manager-demo",
+      createdAt: `${demoToday}T05:00:00Z`,
+      amount: r.received!,
+      method: "cash",
+      reversesId: null,
+      note: "Demo kapora kaydı",
+    }));
+}
+const collectionEntries = seedCollections();
 let current: s.Session["user"] = null;
 let sequence = 20;
 let elapsed = 0;
@@ -17,6 +37,13 @@ const accounts = new Map<
 const csrf = "demo-csrf-token";
 export function resetMock() {
   data = seedData();
+  paymentPreferences = {
+    version: 1,
+    depositEnabled: true,
+    onlinePaymentVisible: true,
+  };
+  collectionEntries.length = 0;
+  collectionEntries.push(...seedCollections());
   current = null;
   sequence = 20;
   elapsed = 0;
@@ -77,6 +104,7 @@ function visible() {
     )
     .map((r) => ({
       ...r,
+      chairName: data.chairs.find((c) => c.id === r.chairId)?.name,
       allowedActions:
         current?.role === "customer"
           ? r.allowedActions.filter((a) => a === "cancel" || a === "reschedule")
@@ -102,7 +130,7 @@ function slots(
   staffId: string,
   date: string,
   ignoreId?: string,
-): s.Slot[] {
+): (s.Slot & { chairId: string })[] {
   const service = data.services.find((x) => x.id === serviceId && x.active);
   const person = data.staff.find(
     (x) => x.id === staffId && x.active && x.serviceIds.includes(serviceId),
@@ -123,7 +151,7 @@ function slots(
   const shift = shifts.find((x) => x.kind === "shift");
   const start = shift?.startsAt ?? "09:00",
     end = shift?.endsAt ?? "19:00";
-  const result: s.Slot[] = [];
+  const result: (s.Slot & { chairId: string })[] = [];
   for (let minute = 9 * 60; minute < 19 * 60; minute += 30) {
     const time = `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
     const startsAt = `${date}T${time}:00+03:00`;
@@ -155,12 +183,20 @@ function slots(
         ["pending_payment", "confirmed", "in_service"].includes(r.status) &&
         overlaps(startsAt, endsAt, r.startsAt, r.endsAt),
     );
-    if (
-      busy.some((r) => r.staffId === staffId) ||
-      busy.length >= data.chairs.filter((x) => x.active).length
-    )
-      continue;
-    result.push({ id: `${staffId}|${startsAt}`, staffId, startsAt, endsAt });
+    const chair = data.chairs.find(
+      (c) =>
+        c.active &&
+        (!c.assignedStaffId || c.assignedStaffId === staffId) &&
+        !busy.some((r) => r.chairId === c.id),
+    );
+    if (busy.some((r) => r.staffId === staffId) || !chair) continue;
+    result.push({
+      id: `${staffId}|${startsAt}`,
+      staffId,
+      startsAt,
+      endsAt,
+      chairId: chair.id,
+    });
   }
   return result;
 }
@@ -189,7 +225,17 @@ export const handlers = [
       return reply(s.catalog, {
         salon: data.salon,
         services:
-          scenario === "empty" ? [] : data.services.filter((x) => x.active),
+          scenario === "empty"
+            ? []
+            : data.services
+                .filter((x) => x.active)
+                .map((x) => ({
+                  ...x,
+                  deposit: paymentPreferences.depositEnabled
+                    ? x.deposit
+                    : { amount: 0, currency: "TRY" },
+                })),
+        paymentSettings: paymentPreferences,
         staff: data.staff.filter((x) => x.active),
         today: demoToday,
       });
@@ -228,6 +274,15 @@ export const handlers = [
           401,
         );
       let rows = visible();
+      const period = url.searchParams.get("period");
+      if (period && period !== "all")
+        rows = rows.filter(
+          (r) =>
+            ["confirmed", "pending_payment", "in_service"].includes(
+              r.status,
+            ) ===
+            (period === "upcoming"),
+        );
       const filter = url.searchParams.get("date");
       if (filter) rows = rows.filter((r) => r.startsAt.slice(0, 10) === filter);
       const page = Math.max(1, Number(url.searchParams.get("page")) || 1),
@@ -236,6 +291,7 @@ export const handlers = [
           Math.max(1, Number(url.searchParams.get("pageSize")) || 20),
         );
       rows.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+      if (period === "past") rows.reverse();
       return reply(s.page, {
         items:
           scenario === "empty"
@@ -251,6 +307,23 @@ export const handlers = [
       if (current.role === "customer")
         return error("FORBIDDEN", "Bu alana erişim yetkiniz yok.", 403);
       return reply(s.operations, workspace());
+    }
+    if (
+      method === "GET" &&
+      (path === "/payment-settings" ||
+        /^\/reservations\/[^/]+\/collections$/.test(path))
+    ) {
+      if (current?.role !== "manager")
+        return error("FORBIDDEN", "Yönetici yetkisi gerekli.", 403);
+      if (path === "/payment-settings")
+        return reply(s.paymentSettings, paymentPreferences);
+      const r = data.reservations.find((r) => r.id === path.split("/")[2]);
+      return r
+        ? reply(s.collections, {
+            reservation: r,
+            entries: collectionEntries.filter((e) => e.reservationId === r.id),
+          })
+        : error("NOT_FOUND", "Randevu bulunamadı.", 404);
     }
     if (method === "GET") return error("NOT_FOUND", "Kayıt bulunamadı.", 404);
     if (request.headers.get("X-CSRF-Token") !== csrf)
@@ -359,6 +432,93 @@ export const handlers = [
       replays.set(scope, { signature, response: structuredClone(result) });
       return reply(schema, result);
     }
+    if (method === "PUT" && path === "/payment-settings") {
+      if (current?.role !== "manager")
+        return error("FORBIDDEN", "Yönetici yetkisi gerekli.", 403);
+      const parsed = s.paymentSettings.safeParse(body);
+      if (!parsed.success)
+        return error("VALIDATION_ERROR", "Ayarları kontrol edin.", 422);
+      if (parsed.data.version !== paymentPreferences.version)
+        return error("VERSION_CONFLICT", "Ayarlar değişti; yenileyin.", 409);
+      paymentPreferences = { ...parsed.data, version: parsed.data.version + 1 };
+      return save(s.paymentSettings, paymentPreferences);
+    }
+    if (
+      method === "POST" &&
+      /^\/reservations\/[^/]+\/collections$/.test(path)
+    ) {
+      if (current?.role !== "manager")
+        return error("FORBIDDEN", "Yönetici yetkisi gerekli.", 403);
+      const parsed = s.collectionRequest.safeParse(body);
+      if (!parsed.success)
+        return error("VALIDATION_ERROR", "Tahsilatı kontrol edin.", 422);
+      const r = data.reservations.find((r) => r.id === path.split("/")[2]);
+      if (!r) return error("NOT_FOUND", "Randevu bulunamadı.", 404);
+      const input = parsed.data;
+      if (input.version !== r.version)
+        return error("VERSION_CONFLICT", "Randevu değişti; yenileyin.", 409);
+      const original =
+        input.action === "reverse"
+          ? collectionEntries.find(
+              (e) => e.id === input.entryId && e.reservationId === r.id,
+            )
+          : undefined;
+      if (
+        input.action === "reverse" &&
+        (!original ||
+          original.reversesId ||
+          collectionEntries.some((e) => e.reversesId === original.id))
+      )
+        return error("INVALID_TRANSITION", "Kayıt düzeltilemez.", 409);
+      if (
+        input.action === "receive" &&
+        ["cancelled", "expired", "no_show"].includes(r.status)
+      )
+        return error(
+          "INVALID_TRANSITION",
+          "Bu randevuya tahsilat girilemez.",
+          409,
+        );
+      const amount =
+        input.action === "receive" ? input.amount : original!.amount.amount;
+      const net = (r.received?.amount ?? 0) + (original ? -amount : amount);
+      if (net < 0 || net > r.total.amount)
+        return error(
+          "VALIDATION_ERROR",
+          "Tahsilat kalan bakiyeyi aşamaz.",
+          422,
+        );
+      r.received = { amount: net, currency: "TRY" };
+      r.version++;
+      if (r.status === "pending_payment" && net >= r.deposit.amount) {
+        r.status = "confirmed";
+        r.holdExpiresAt = null;
+        r.allowedActions = ["cancel", "reschedule", "start", "no_show"];
+      }
+      r.paymentStatus =
+        ["cancelled", "expired"].includes(r.status) && net > 0
+          ? "refund_pending"
+          : net >= r.total.amount && net > 0
+            ? "paid"
+            : net > 0
+              ? "pending"
+              : "unpaid";
+      collectionEntries.push({
+        id: crypto.randomUUID(),
+        reservationId: r.id,
+        actorId: current.id,
+        createdAt: now().toISOString(),
+        amount: { amount, currency: "TRY" },
+        method: input.action === "receive" ? input.method : original!.method,
+        reversesId: original?.id ?? null,
+        note: input.note,
+      });
+      const result = save(s.collections, {
+        reservation: r,
+        entries: collectionEntries.filter((e) => e.reservationId === r.id),
+      });
+      return scenario === "response-lost" ? HttpResponse.error() : result;
+    }
     if (method === "POST" && path === "/reservations") {
       const parsed = s.createReservation.safeParse(body);
       if (!parsed.success)
@@ -382,6 +542,7 @@ export const handlers = [
       const service = data.services.find((x) => x.id === input.serviceId)!;
       const r: s.Reservation = {
         id: `r-${++sequence}`,
+        chairId: chosen.chairId,
         version: 1,
         customer: input.customer,
         customerId: current?.role === "customer" ? current.id : null,
@@ -392,10 +553,19 @@ export const handlers = [
         startsAt: chosen.startsAt,
         endsAt: chosen.endsAt,
         total: { ...service.price },
-        deposit: { ...service.deposit },
-        status: "pending_payment",
+        deposit: paymentPreferences.depositEnabled
+          ? { ...service.deposit }
+          : { amount: 0, currency: "TRY" },
+        received: { amount: 0, currency: "TRY" },
+        status:
+          paymentPreferences.depositEnabled && service.deposit.amount > 0
+            ? "pending_payment"
+            : "confirmed",
         paymentStatus: "unpaid",
-        holdExpiresAt: new Date(now().getTime() + 300_000).toISOString(),
+        holdExpiresAt:
+          paymentPreferences.depositEnabled && service.deposit.amount > 0
+            ? new Date(now().getTime() + 300_000).toISOString()
+            : null,
         allowedActions: ["cancel"],
       };
       data.reservations.push(r);
@@ -451,6 +621,17 @@ export const handlers = [
         );
       }
       r.paymentStatus = "paid";
+      r.received = { ...r.deposit };
+      collectionEntries.push({
+        id: crypto.randomUUID(),
+        reservationId: r.id,
+        actorId: "demo-provider",
+        createdAt: now().toISOString(),
+        amount: { ...r.deposit },
+        method: "card",
+        reversesId: null,
+        note: "Demo ödeme simülasyonu",
+      });
       r.status = "confirmed";
       r.holdExpiresAt = null;
       r.version++;
@@ -528,6 +709,34 @@ export const handlers = [
       if (!parsed.success)
         return error("VALIDATION_ERROR", "Alanları kontrol edin.", 422);
       const change = parsed.data;
+      if (change.resource === "chairs") {
+        if (
+          change.value.assignedStaffId &&
+          !data.staff.some((staff) => staff.id === change.value.assignedStaffId)
+        )
+          return error(
+            "VALIDATION_ERROR",
+            "Koltuk için seçilen çalışan bulunamadı.",
+            422,
+          );
+        if (
+          data.reservations.some(
+            (r) =>
+              r.chairId === change.value.id &&
+              ["confirmed", "pending_payment", "in_service"].includes(
+                r.status,
+              ) &&
+              (!change.value.active ||
+                (change.value.assignedStaffId &&
+                  change.value.assignedStaffId !== r.staffId)),
+          )
+        )
+          return error(
+            "SLOT_CONFLICT",
+            "Koltuk değişikliği aktif randevuyla çakışıyor.",
+            409,
+          );
+      }
       if (
         change.resource === "services" &&
         change.value.deposit.amount > change.value.price.amount

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Button, Field, Notice } from "../../shared/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { z } from "zod";
+import { paymentSettings } from "../../contracts/schemas";
+import { request } from "../../shared/api/http";
+import { RequestIntent } from "../../shared/api/intent";
+import { Button, Field, Notice, QueryState } from "../../shared/ui";
 import { t } from "../../shared/i18n";
 import "./payment-settings.css";
 
@@ -19,7 +24,7 @@ const emptyDraft: Draft = {
   merchant: "",
 };
 
-// Deliberately local UI state. No API, persistence or provider selection.
+// Bank/provider draft remains local; the separate policy form is persisted.
 export function PaymentSettings() {
   const { register, handleSubmit, reset } = useForm<Draft>({
     defaultValues: emptyDraft,
@@ -28,6 +33,7 @@ export function PaymentSettings() {
   const [cleared, setCleared] = useState(false);
   return (
     <div className="payment-settings stack">
+      <PaymentPreferences />
       <Notice>
         <strong>{t("paymentSettings.draft")}</strong>
         <p>{t("paymentSettings.scope")}</p>
@@ -151,5 +157,124 @@ export function PaymentSettings() {
         )}
       </div>
     </div>
+  );
+}
+
+function PaymentPreferences() {
+  const cache = useQueryClient();
+  const [saved, setSaved] = useState(false);
+  const query = useQuery({
+    queryKey: ["payment-settings"],
+    refetchOnWindowFocus: false,
+    queryFn: ({ signal }) =>
+      request("/payment-settings", paymentSettings, { signal }),
+  });
+  return (
+    <>
+      {saved && <p role="status">{t("paymentPolicy.saved")}</p>}
+      <QueryState
+        pending={query.isPending}
+        error={query.error}
+        retry={() => void query.refetch()}
+      >
+        {query.data && (
+          <PreferencesForm
+            key={query.data.version}
+            value={query.data}
+            onChange={() => setSaved(false)}
+            onSaved={(result) => {
+              cache.setQueryData(["payment-settings"], result);
+              setSaved(true);
+            }}
+          />
+        )}
+      </QueryState>
+    </>
+  );
+}
+function PreferencesForm({
+  value,
+  onSaved,
+  onChange,
+}: {
+  value: z.infer<typeof paymentSettings>;
+  onSaved: (value: z.infer<typeof paymentSettings>) => void;
+  onChange: () => void;
+}) {
+  const cache = useQueryClient();
+  const [draft, setDraft] = useState(value);
+  const [intent] = useState(() => new RequestIntent());
+  const mutation = useMutation({
+    mutationFn: () =>
+      request("/payment-settings", paymentSettings, {
+        method: "PUT",
+        body: draft,
+        key: intent.keyFor(draft),
+      }),
+    onSuccess: async (result) => {
+      intent.complete();
+      setDraft(result);
+      onSaved(result);
+      await Promise.all(
+        ["catalog", "operations"].map((key) =>
+          cache.invalidateQueries({ queryKey: [key] }),
+        ),
+      );
+    },
+  });
+  return (
+    <form
+      className="stack payment-policy"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onChange();
+        mutation.mutate();
+      }}
+    >
+      <h2>{t("paymentPolicy.title")}</h2>
+      <label className="policy-toggle">
+        <input
+          type="checkbox"
+          checked={draft.depositEnabled}
+          onChange={(e) => {
+            onChange();
+            setDraft({ ...draft, depositEnabled: e.target.checked });
+          }}
+        />
+        <strong>{t("paymentPolicy.deposit")}</strong>
+      </label>
+      <p className="muted">{t("paymentPolicy.depositHint")}</p>
+      <label className="policy-toggle">
+        <input
+          type="checkbox"
+          checked={draft.onlinePaymentVisible}
+          onChange={(e) => {
+            onChange();
+            setDraft({ ...draft, onlinePaymentVisible: e.target.checked });
+          }}
+        />
+        <strong>{t("paymentPolicy.visible")}</strong>
+      </label>
+      <p className="muted">{t("paymentPolicy.visibleHint")}</p>
+      <Notice>{t("paymentPolicy.disconnected")}</Notice>
+      {mutation.error && (
+        <Notice error>
+          {mutation.error.message}{" "}
+          <Button
+            variant="quiet"
+            onClick={() =>
+              void cache.invalidateQueries({ queryKey: ["payment-settings"] })
+            }
+          >
+            {t("common.retry")}
+          </Button>
+        </Notice>
+      )}
+      <div className="actions">
+        <Button type="submit" disabled={mutation.isPending}>
+          {t(mutation.isPending ? "common.loading" : "common.save")}
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -25,6 +25,11 @@ import {
 } from "./modules/reservations/index.js";
 import { localDate } from "./modules/scheduling/domain.js";
 import { workspace, manage } from "./modules/operations/index.js";
+import {
+  collectionHistory,
+  recordCollection,
+  paymentPreferences,
+} from "./modules/payments/index.js";
 import { transaction, lockSalon } from "./infrastructure/database.js";
 declare module "fastify" {
   interface Session {
@@ -119,13 +124,11 @@ export async function createApp(
       });
     const e = error as { statusCode?: number; code?: string };
     if (e.statusCode === 429)
-      return reply
-        .code(429)
-        .send({
-          code: "UNAVAILABLE",
-          message: "Çok fazla istek; daha sonra tekrar deneyin.",
-          requestId: request.id,
-        });
+      return reply.code(429).send({
+        code: "UNAVAILABLE",
+        message: "Çok fazla istek; daha sonra tekrar deneyin.",
+        requestId: request.id,
+      });
     if (e.statusCode === 403)
       return reply.code(403).send({
         code: "FORBIDDEN",
@@ -234,7 +237,15 @@ export async function createApp(
     const catalog = await readSalon(pool, config.SALON_ID);
     return s.catalog.parse({
       salon: catalog.salon,
-      services: catalog.services.filter((s) => s.active),
+      services: catalog.services
+        .filter((s) => s.active)
+        .map((service) => ({
+          ...service,
+          deposit: catalog.paymentSettings.depositEnabled
+            ? service.deposit
+            : { amount: 0, currency: "TRY" },
+        })),
+      paymentSettings: catalog.paymentSettings,
       staff: catalog.staff.filter((s) => s.active),
       today: localDate(clock(), catalog.salon.timezone),
     });
@@ -265,20 +276,16 @@ export async function createApp(
   );
   app.get("/api/v1/reservations", async (request) => {
     const ctx = await context(request, true),
-      query = z
-        .object({
-          date: s.date.optional(),
-          page: z.coerce.number().int().min(1).max(10000).default(1),
-          pageSize: z.coerce.number().int().min(1).max(100).default(20),
-        })
-        .parse(request.query);
+      query = s.reservationListQuery.parse(request.query);
     return tx(ctx).read(async (store) => {
-      const rows = await store.list(ctx.actor!, query.date);
+      const rows = await store.page(ctx.actor!, query);
+      const catalog = await store.catalog();
       return s.page.parse({
-        items: rows
-          .slice((query.page - 1) * query.pageSize, query.page * query.pageSize)
-          .map((b) => toDto(b, ctx, clock())),
-        total: rows.length,
+        items: rows.items.map((b) => ({
+          ...toDto(b, ctx, clock()),
+          chairName: catalog.chairs.find((c) => c.id === b.chairId)?.name,
+        })),
+        total: rows.total,
         page: query.page,
         pageSize: query.pageSize,
       });
@@ -311,6 +318,52 @@ export async function createApp(
         pool,
         config.SALON_ID,
         s.managementChange.parse(request.body),
+        await context(request, true),
+        key(request),
+        clock(),
+      ),
+    ),
+  );
+  app.get("/api/v1/payment-settings", async (request) =>
+    s.paymentSettings.parse(
+      await paymentPreferences(
+        pool,
+        config.SALON_ID,
+        await context(request, true),
+      ),
+    ),
+  );
+  app.put("/api/v1/payment-settings", async (request) =>
+    s.paymentSettings.parse(
+      await paymentPreferences(
+        pool,
+        config.SALON_ID,
+        await context(request, true),
+        {
+          input: s.paymentSettings.strict().parse(request.body),
+          key: key(request),
+        },
+      ),
+    ),
+  );
+  app.get("/api/v1/reservations/:id/collections", async (request) =>
+    s.collections.parse(
+      await collectionHistory(
+        pool,
+        config.SALON_ID,
+        z.object({ id: s.id }).parse(request.params).id,
+        await context(request, true),
+        clock(),
+      ),
+    ),
+  );
+  app.post("/api/v1/reservations/:id/collections", async (request) =>
+    s.collections.parse(
+      await recordCollection(
+        pool,
+        config.SALON_ID,
+        z.object({ id: s.id }).parse(request.params).id,
+        s.collectionRequest.parse(request.body),
         await context(request, true),
         key(request),
         clock(),

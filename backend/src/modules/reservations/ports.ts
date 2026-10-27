@@ -9,6 +9,15 @@ export interface BookingStore {
   insert(value: Booking): Promise<void>;
   save(value: Booking): Promise<void>;
   list(actor: Actor, date?: string): Promise<Booking[]>;
+  page(
+    actor: Actor,
+    query: {
+      date?: string;
+      period: "all" | "upcoming" | "past";
+      page: number;
+      pageSize: number;
+    },
+  ): Promise<{ items: Booking[]; total: number }>;
   event(value: Booking, topic: string): Promise<void>;
   audit(action: string, id: string): Promise<void>;
 }

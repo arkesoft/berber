@@ -364,6 +364,17 @@ export function BookingPage() {
                 <Notice>
                   {t(mockMode ? "copy.4691ec0cb1" : "booking.liveReview")}
                 </Notice>
+                {(selectedService?.deposit.amount ?? 0) === 0 && (
+                  <Notice>{t("paymentPolicy.noDeposit")}</Notice>
+                )}
+                {query.data?.paymentSettings?.onlinePaymentVisible && (
+                  <section aria-label={t("paymentPolicy.publicTitle")}>
+                    <h3>{t("paymentPolicy.publicTitle")}</h3>
+                    {!mockMode && (
+                      <Notice>{t("paymentPolicy.publicOffline")}</Notice>
+                    )}
+                  </section>
+                )}
                 {!mockMode && (selectedService?.deposit.amount ?? 0) > 0 && (
                   <Notice>{t("booking.paymentDisabled")}</Notice>
                 )}
@@ -394,16 +405,18 @@ export function BookingPage() {
                       {t("copy.59f6a9776e")}{" "}
                       <strong>{formatMoney(reservation.deposit)}</strong>
                     </p>
-                    {mockMode && (
-                      <Button
-                        disabled={pay.isPending || !mockMode}
-                        onClick={() => pay.mutate()}
-                      >
-                        {pay.isPending
-                          ? t("copy.01a73aedab")
-                          : t("copy.23e80c5ad5")}
-                      </Button>
-                    )}
+                    {mockMode &&
+                      query.data?.paymentSettings?.onlinePaymentVisible !==
+                        false && (
+                        <Button
+                          disabled={pay.isPending || !mockMode}
+                          onClick={() => pay.mutate()}
+                        >
+                          {pay.isPending
+                            ? t("copy.01a73aedab")
+                            : t("copy.23e80c5ad5")}
+                        </Button>
+                      )}
                     {pay.error instanceof ApiError &&
                       pay.error.code === "HOLD_EXPIRED" && (
                         <Button

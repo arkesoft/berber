@@ -905,12 +905,108 @@
   .resource-row p {
     margin-top: var(--space-2);
   }
+  .resource-row p:empty {
+    display: none;
+  }
+  .resource-row > div:first-child > span {
+    display: block;
+    margin-top: var(--space-2);
+  }
+  .operations-content .stack > .filter-row {
+    margin-bottom: 0;
+  }
   .editor {
     max-width: 40rem;
     border: 1px solid var(--color-border);
     background: var(--color-surface);
     border-radius: var(--control-radius);
     padding: var(--space-6);
+  }
+  .panel-modal {
+    width: min(48rem, calc(100% - 2rem));
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-6);
+  }
+  .modal-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-surface);
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+  .modal-heading h2 {
+    margin: 0;
+    font-size: var(--text-section);
+  }
+  .panel-modal .editor {
+    border: 0;
+    padding: 0;
+    max-width: none;
+  }
+  .panel-modal p {
+    margin-block: var(--space-3);
+    overflow-wrap: anywhere;
+  }
+  .panel-modal .reschedule {
+    padding: 0;
+  }
+  .panel-modal .field,
+  .panel-modal fieldset {
+    min-width: 0;
+  }
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+    font-variant-numeric: tabular-nums;
+  }
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .pagination-controls select {
+    width: auto;
+    min-width: 4rem;
+  }
+  .filter-row > .field {
+    min-width: 0;
+    flex: 1 1 10rem;
+  }
+  .resource-row > div:first-child {
+    flex: 1 1 18rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .operations-content h1 {
+    font-size: 2rem;
+  }
+  @media (max-width: 40rem) {
+    .operations-content h1 {
+      font-size: 1.5rem;
+    }
+    .panel-modal {
+      padding: var(--space-4);
+    }
+    .pagination-controls {
+      width: 100%;
+    }
+    .pagination-controls .button {
+      flex: 1;
+    }
   }
   .loading {
     min-height: 12rem;

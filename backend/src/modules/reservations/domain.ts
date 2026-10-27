@@ -32,6 +32,7 @@ export type Booking = {
   occupiedUntil: string;
   total: number;
   deposit: number;
+  receivedAmount?: number;
   status: Status;
   paymentStatus: PaymentStatus;
   holdExpiresAt: string | null;
@@ -78,6 +79,56 @@ export class Reservation {
   snapshot(): Booking {
     return structuredClone(this.value);
   }
+  recordCollection(delta: number, version: number, now: string) {
+    const b = this.value;
+    ensure(
+      version === b.version,
+      "VERSION_CONFLICT",
+      "Randevu değişti; listeyi yenileyin.",
+      409,
+    );
+    if (delta > 0) {
+      ensure(
+        !["cancelled", "expired", "no_show"].includes(b.status),
+        "INVALID_TRANSITION",
+        "Bu randevuya yeni tahsilat eklenemez.",
+        409,
+      );
+      ensure(
+        !(
+          b.status === "pending_payment" &&
+          b.holdExpiresAt &&
+          Date.parse(b.holdExpiresAt) <= Date.parse(now)
+        ),
+        "HOLD_EXPIRED",
+        "Saat tutma süresi doldu; tahsilat kaydedilemez.",
+        409,
+      );
+    }
+    const received = (b.receivedAmount ?? 0) + delta;
+    ensure(
+      Number.isSafeInteger(delta) &&
+        delta !== 0 &&
+        received >= 0 &&
+        received <= b.total,
+      "VALIDATION_ERROR",
+      "Tahsilat kalan bakiyeyi aşamaz.",
+    );
+    b.receivedAmount = received;
+    if (b.status === "pending_payment" && received >= b.deposit) {
+      b.status = "confirmed";
+      b.holdExpiresAt = null;
+    }
+    b.paymentStatus =
+      ["cancelled", "expired"].includes(b.status) && received > 0
+        ? "refund_pending"
+        : received >= b.total && received > 0
+          ? "paid"
+          : received > 0
+            ? "pending"
+            : "unpaid";
+    b.version++;
+  }
   change(
     action: Action,
     version: number,
@@ -118,7 +169,8 @@ export class Reservation {
       b.holdExpiresAt = null;
       if (
         action === "cancel" &&
-        ["paid", "partially_refunded"].includes(b.paymentStatus)
+        ((b.receivedAmount ?? 0) > 0 ||
+          ["paid", "partially_refunded"].includes(b.paymentStatus))
       )
         b.paymentStatus = "refund_pending";
     }

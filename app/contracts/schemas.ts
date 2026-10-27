@@ -35,6 +35,7 @@ export const chair = z.object({
   id,
   name: z.string().min(2).max(100),
   active: z.boolean(),
+  assignedStaffId: id.nullable().optional(),
 });
 export const salon = z.object({
   id,
@@ -46,11 +47,17 @@ export const salon = z.object({
   currency: z.literal("TRY"),
   bookingDays: z.number().int().min(1).max(90),
 });
+export const paymentSettings = z.object({
+  version: z.number().int().positive(),
+  depositEnabled: z.boolean(),
+  onlinePaymentVisible: z.boolean(),
+});
 export const catalog = z.object({
   salon,
   services: z.array(service),
   staff: z.array(staff),
   today: date,
+  paymentSettings: paymentSettings.optional(),
 });
 export const slot = z.object({
   id,
@@ -83,6 +90,8 @@ export const paymentStatus = z.enum([
 ]);
 export const reservation = z.object({
   id,
+  chairId: id.optional(),
+  chairName: z.string().optional(),
   version: z.number().int().positive(),
   customer,
   customerId: id.nullable(),
@@ -96,6 +105,7 @@ export const reservation = z.object({
   deposit: money,
   status: reservationStatus,
   paymentStatus,
+  received: money.optional(),
   holdExpiresAt: instant.nullable(),
   allowedActions: z.array(
     z.enum(["cancel", "reschedule", "start", "complete", "no_show"]),
@@ -106,6 +116,12 @@ export const page = z.object({
   total: z.number().int().nonnegative(),
   page: z.number().int().positive(),
   pageSize: z.number().int().positive().max(100),
+});
+export const reservationListQuery = z.object({
+  date: date.optional(),
+  period: z.enum(["all", "upcoming", "past"]).default("all"),
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export const createReservation = z.object({
   serviceId: id,
@@ -126,6 +142,35 @@ export const changeReservation = z.object({
   slotId: id.optional(),
 });
 export const paymentRequest = z.object({ reservationId: id });
+export const collectionEntry = z.object({
+  id,
+  reservationId: id,
+  actorId: id,
+  createdAt: instant,
+  amount: money,
+  method: z.enum(["cash", "card", "bank_transfer"]),
+  reversesId: id.nullable(),
+  note: z.string().max(200),
+});
+export const collectionRequest = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("receive"),
+    version: z.number().int().positive(),
+    amount: z.number().int().min(1).max(100_000_000),
+    method: collectionEntry.shape.method,
+    note: z.string().trim().max(200).default(""),
+  }),
+  z.object({
+    action: z.literal("reverse"),
+    version: z.number().int().positive(),
+    entryId: id,
+    note: z.string().trim().min(3).max(200),
+  }),
+]);
+export const collections = z.object({
+  reservation,
+  entries: z.array(collectionEntry),
+});
 export const paymentResult = z.object({
   reservation,
   checkoutUrl: z.url().nullable(),
@@ -208,6 +253,34 @@ export type ApiErrorCode = z.infer<typeof apiError>["code"];
 
 // Executable contract first: HTTP adapters and mocks consume these same schemas.
 export const endpoints = {
+  paymentSettings: {
+    method: "get",
+    path: "/payment-settings",
+    output: paymentSettings,
+    auth: true,
+  },
+  savePaymentSettings: {
+    method: "put",
+    path: "/payment-settings",
+    input: paymentSettings,
+    output: paymentSettings,
+    auth: true,
+    idempotent: true,
+  },
+  collections: {
+    method: "get",
+    path: "/reservations/{id}/collections",
+    output: collections,
+    auth: true,
+  },
+  recordCollection: {
+    method: "post",
+    path: "/reservations/{id}/collections",
+    input: collectionRequest,
+    output: collections,
+    auth: true,
+    idempotent: true,
+  },
   catalog: { method: "get", path: "/catalog", output: catalog, auth: false },
   availability: {
     method: "get",

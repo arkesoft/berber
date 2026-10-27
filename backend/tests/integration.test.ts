@@ -183,12 +183,551 @@ class Client {
     );
   }
 }
-test("payment backend is absent while provider selection is deferred", async () => {
+test("collection ledger enforces amounts, replay, concurrent versions, reversal, FK and immutability", async () => {
+  const manager = await new Client().login();
+  const employee = await new Client().login("staff@example.test");
+  const created = await manager.book(
+    (await manager.slots("one", "2026-10-30"))[0]!.id,
+  );
+  assert.equal(created.status, 200);
+  const id = created.data.reservation.id;
+  const path = `/api/v1/reservations/${id}/collections`;
+  const receive = {
+    action: "receive",
+    version: 1,
+    amount: 5000,
+    method: "cash",
+    note: "Kapora ilk parça",
+  };
+  assert.equal((await employee.call("GET", path)).status, 403);
+  assert.equal(
+    (
+      await employee.call("POST", path, receive, {
+        "idempotency-key": randomUUID(),
+      })
+    ).status,
+    403,
+  );
+  const anonymous = await new Client().init();
+  assert.equal((await anonymous.call("GET", path)).status, 401);
+  for (const amount of [0, -1, 1.5, 65001])
+    assert.equal(
+      (
+        await manager.call(
+          "POST",
+          path,
+          { ...receive, amount },
+          { "idempotency-key": randomUUID() },
+        )
+      ).status,
+      422,
+    );
+  const key = randomUUID();
+  const results = await Promise.all([
+    manager.call("POST", path, receive, { "idempotency-key": key }),
+    manager.call("POST", path, receive, { "idempotency-key": key }),
+  ]);
+  assert.equal(results[0]!.status, 200);
+  assert.deepEqual(results[0]!.data, results[1]!.data);
+  let state = s.collections.parse(results[0]!.data);
+  assert.equal(state.entries.length, 1);
+  assert.equal(state.reservation.received!.amount, 5000);
+  assert.equal(state.reservation.status, "pending_payment");
+  assert.equal(
+    (
+      await manager.call(
+        "POST",
+        path,
+        { ...receive, amount: 6000 },
+        { "idempotency-key": key },
+      )
+    ).data.code,
+    "IDEMPOTENCY_CONFLICT",
+  );
+  const racers = await Promise.all(
+    [1, 2].map(() =>
+      manager.call(
+        "POST",
+        path,
+        { ...receive, version: 2, amount: 10000 },
+        { "idempotency-key": randomUUID() },
+      ),
+    ),
+  );
+  assert.deepEqual(racers.map((x) => x.status).sort(), [200, 409]);
+  state = s.collections.parse(racers.find((x) => x.status === 200)!.data);
+  assert.equal(state.reservation.status, "confirmed");
+  assert.equal(state.reservation.holdExpiresAt, null);
+  assert.equal(state.reservation.received!.amount, 15000);
+  const full = await manager.call(
+    "POST",
+    path,
+    { ...receive, version: 3, amount: 50000, method: "bank_transfer" },
+    { "idempotency-key": randomUUID() },
+  );
+  assert.equal(full.status, 200);
+  state = s.collections.parse(full.data);
+  assert.equal(state.reservation.received!.amount, 65000);
+  assert.equal(state.reservation.paymentStatus, "paid");
+  const entry = state.entries.find((e) => e.amount.amount === 50000)!;
+  const reverse = {
+    action: "reverse",
+    version: 4,
+    entryId: entry.id,
+    note: "Yanlış tutar girildi",
+  };
+  const reversals = await Promise.all(
+    [1, 2].map(() =>
+      manager.call("POST", path, reverse, { "idempotency-key": randomUUID() }),
+    ),
+  );
+  assert.deepEqual(reversals.map((x) => x.status).sort(), [200, 409]);
+  state = s.collections.parse(reversals.find((x) => x.status === 200)!.data);
+  assert.equal(state.reservation.received!.amount, 15000);
+  assert.equal(state.entries.length, 4);
+  assert.equal(state.reservation.status, "confirmed");
+  const relation = (
+    await pool.query(
+      "SELECT reservation_id,actor_id FROM payments.collections WHERE id=$1",
+      [entry.id],
+    )
+  ).rows[0]!;
+  assert.equal(relation.reservation_id, id);
+  assert.equal(relation.actor_id, "manager");
+  for (const statement of [
+    "DELETE FROM payments.collections WHERE id=$1",
+    "UPDATE payments.collections SET amount=1 WHERE id=$1",
+  ])
+    await assert.rejects(
+      pool.query(statement, [entry.id]),
+      (e: unknown) => (e as { code: string }).code === "23514",
+    );
+  await assert.rejects(
+    pool.query(
+      "INSERT INTO payments.collections(id,salon_id,reservation_id,actor_id,amount,method) VALUES($1,$2,'missing','manager',1,'cash')",
+      [randomUUID(), config.SALON_ID],
+    ),
+    (e: unknown) => (e as { code: string }).code === "23503",
+  );
+  await assert.rejects(
+    pool.query(
+      "INSERT INTO payments.collections(id,salon_id,reservation_id,actor_id,amount,method) VALUES($1,$2,$3,'missing',1,'cash')",
+      [randomUUID(), config.SALON_ID, id],
+    ),
+    (e: unknown) => (e as { code: string }).code === "23503",
+  );
+  const cancel = await manager.call(
+    "PATCH",
+    `/api/v1/reservations/${id}`,
+    { action: "cancel", version: 5 },
+    { "idempotency-key": randomUUID() },
+  );
+  assert.equal(cancel.status, 200);
+  assert.equal(cancel.data.paymentStatus, "refund_pending");
+  assert.equal(
+    (
+      await manager.call(
+        "POST",
+        path,
+        { ...receive, version: 6 },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    409,
+  );
+  const snapshot = (await manager.call("GET", path)).data;
+  assert.equal(snapshot.reservation.received.amount, 15000);
+  assert.equal(snapshot.entries.length, 4);
+});
+
+test("payment preferences persist independently, preserve snapshots and deny non-managers", async () => {
+  const manager = await new Client().login();
+  const employee = await new Client().login("staff@example.test");
+  const settings = s.paymentSettings.parse(
+    (await manager.call("GET", "/api/v1/payment-settings")).data,
+  );
+  const old = await manager.book(
+    (await manager.slots("one", "2026-10-30"))[0]!.id,
+  );
+  const changed = {
+    ...settings,
+    depositEnabled: false,
+    onlinePaymentVisible: true,
+  };
+  assert.equal(
+    (
+      await employee.call("PUT", "/api/v1/payment-settings", changed, {
+        "idempotency-key": randomUUID(),
+      })
+    ).status,
+    403,
+  );
+  const key = randomUUID();
+  const first = await manager.call("PUT", "/api/v1/payment-settings", changed, {
+    "idempotency-key": key,
+  });
+  assert.equal(first.status, 200);
+  assert.deepEqual(
+    (
+      await manager.call("PUT", "/api/v1/payment-settings", changed, {
+        "idempotency-key": key,
+      })
+    ).data,
+    first.data,
+  );
+  assert.equal(
+    (
+      await manager.call("PUT", "/api/v1/payment-settings", changed, {
+        "idempotency-key": randomUUID(),
+      })
+    ).data.code,
+    "VERSION_CONFLICT",
+  );
+  const publicCatalog = s.catalog.parse(
+    (await manager.call("GET", "/api/v1/catalog")).data,
+  );
+  assert.equal(publicCatalog.paymentSettings!.onlinePaymentVisible, true);
+  assert.equal(publicCatalog.services[0]!.deposit.amount, 0);
+  const created = await manager.book(
+    (await manager.slots("one", "2026-10-30"))[0]!.id,
+  );
+  assert.equal(created.data.reservation.status, "confirmed");
+  assert.equal(created.data.reservation.deposit.amount, 0);
+  assert.equal(
+    (
+      await manager.call(
+        "GET",
+        `/api/v1/reservations/${old.data.reservation.id}/collections`,
+      )
+    ).data.reservation.deposit.amount,
+    15000,
+  );
+  assert.equal(
+    (
+      await manager.call(
+        "PUT",
+        "/api/v1/payment-settings",
+        { ...first.data, depositEnabled: true, onlinePaymentVisible: false },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    200,
+  );
+  for (const b of [old.data.reservation, created.data.reservation])
+    assert.equal(
+      (
+        await manager.call(
+          "PATCH",
+          `/api/v1/reservations/${b.id}`,
+          { action: "cancel", version: b.version },
+          { "idempotency-key": randomUUID() },
+        )
+      ).status,
+      200,
+    );
+});
+
+test("late collection cannot revive a hold; partial expired payments remain visible for review", async () => {
+  const manager = await new Client().login();
+  const created = await manager.book(
+    (await manager.slots("one", "2026-10-30"))[0]!.id,
+  );
+  const id = created.data.reservation.id;
+  const path = `/api/v1/reservations/${id}/collections`;
+  const body = {
+    action: "receive",
+    version: 1,
+    amount: 5000,
+    method: "cash",
+    note: "",
+  };
+  assert.equal(
+    (
+      await manager.call("POST", path, body, {
+        "idempotency-key": randomUUID(),
+      })
+    ).status,
+    200,
+  );
+  const previousTime = time;
+  try {
+    time = "2026-10-26T06:11:00Z";
+    assert.equal(
+      (
+        await manager.call(
+          "POST",
+          path,
+          { ...body, version: 2 },
+          { "idempotency-key": randomUUID() },
+        )
+      ).data.code,
+      "HOLD_EXPIRED",
+    );
+    const history = s.collections.parse((await manager.call("GET", path)).data);
+    assert.equal(history.reservation.status, "expired");
+    assert.equal(history.reservation.paymentStatus, "refund_pending");
+    assert.equal(history.reservation.received!.amount, 5000);
+    assert.equal(history.entries.length, 1);
+  } finally {
+    time = previousTime;
+  }
+});
+
+test("collection and cancellation serialize without losing money or resurrecting a booking", async () => {
+  const manager = await new Client().login();
+  const created = await manager.book(
+    (await manager.slots("one", "2026-10-30"))[0]!.id,
+  );
+  const id = created.data.reservation.id;
+  const results = await Promise.all([
+    manager.call(
+      "POST",
+      `/api/v1/reservations/${id}/collections`,
+      {
+        action: "receive",
+        version: 1,
+        amount: 15000,
+        method: "cash",
+        note: "",
+      },
+      { "idempotency-key": randomUUID() },
+    ),
+    manager.call(
+      "PATCH",
+      `/api/v1/reservations/${id}`,
+      { action: "cancel", version: 1 },
+      { "idempotency-key": randomUUID() },
+    ),
+  ]);
+  assert.deepEqual(results.map((x) => x.status).sort(), [200, 409]);
+  let history = s.collections.parse(
+    (await manager.call("GET", `/api/v1/reservations/${id}/collections`)).data,
+  );
+  if (history.reservation.status !== "cancelled") {
+    assert.equal(
+      (
+        await manager.call(
+          "PATCH",
+          `/api/v1/reservations/${id}`,
+          { action: "cancel", version: history.reservation.version },
+          { "idempotency-key": randomUUID() },
+        )
+      ).status,
+      200,
+    );
+    history = s.collections.parse(
+      (await manager.call("GET", `/api/v1/reservations/${id}/collections`))
+        .data,
+    );
+  }
+  assert.equal(history.reservation.status, "cancelled");
+  assert.equal(
+    history.reservation.received!.amount,
+    history.entries.length === 1 ? 15000 : 0,
+  );
+  if (history.entries.length === 1)
+    assert.equal(history.reservation.paymentStatus, "refund_pending");
+  const customerClient = await new Client().init();
+  assert.equal(
+    (
+      await customerClient.call("POST", "/api/v1/customers", {
+        ...customer,
+        email: "collection-customer@example.test",
+        password: "TestPassword123!",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await customerClient.call("GET", `/api/v1/reservations/${id}/collections`))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await customerClient.call("GET", "/api/v1/payment-settings")).status,
+    403,
+  );
+  assert.equal(
+    (
+      await customerClient.call(
+        "POST",
+        `/api/v1/reservations/${id}/collections`,
+        {
+          action: "receive",
+          version: history.reservation.version,
+          amount: 1,
+          method: "cash",
+          note: "",
+        },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    403,
+  );
+});
+
+test("chair assignment is scoped, enforced by FK and respected by availability and commit", async () => {
+  const manager = await new Client().login();
+  const employee = await new Client().login("staff@example.test");
+  const chair = {
+    id: "chair",
+    name: "Koltuk",
+    active: true,
+    assignedStaffId: "one",
+  };
+  const change = (
+    value:
+      | typeof chair
+      | { id: string; name: string; active: boolean; assignedStaffId: null },
+  ) =>
+    manager.call(
+      "PUT",
+      "/api/v1/management",
+      { resource: "chairs", value },
+      { "idempotency-key": randomUUID() },
+    );
+  assert.equal(
+    (
+      await employee.call(
+        "PUT",
+        "/api/v1/management",
+        { resource: "chairs", value: chair },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await change({ ...chair, assignedStaffId: "missing" })).status,
+    422,
+  );
+  await assert.rejects(
+    pool.query(
+      "INSERT INTO salon.chairs(id,salon_id,document) VALUES($1,$2,$3)",
+      [
+        "invalid-chair",
+        config.SALON_ID,
+        { ...chair, id: "invalid-chair", assignedStaffId: "missing" },
+      ],
+    ),
+    (error: unknown) => (error as { code: string }).code === "23503",
+  );
+  const availableToTwo = (await manager.slots("two"))[0]!;
+  assert.equal((await change(chair)).status, 200);
+  assert.equal((await manager.slots("two")).length, 0);
+  assert.ok((await manager.slots("one")).length > 0);
+  assert.equal((await manager.book(availableToTwo.id, "two")).status, 409);
+  const chosen = (await manager.slots("one"))[0]!;
+  const booked = await manager.book(chosen.id);
+  assert.equal(booked.status, 200);
+  assert.equal(booked.data.reservation.chairId, "chair");
+  assert.equal(
+    (await change({ ...chair, assignedStaffId: "two" })).status,
+    409,
+  );
+  const snapshot = await manager.call("GET", "/api/v1/operations");
+  assert.equal(snapshot.data.chairs[0].assignedStaffId, "one");
+  assert.equal(
+    (
+      await manager.call(
+        "PATCH",
+        `/api/v1/reservations/${booked.data.reservation.id}`,
+        { action: "cancel", version: 1 },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    200,
+  );
+  assert.equal((await change({ ...chair, assignedStaffId: null })).status, 200);
+  assert.ok((await manager.slots("two")).length > 0);
+});
+
+test("reservation filters apply before SQL pagination with stable totals and role ownership", async () => {
+  const manager = await new Client().login();
+  const user = await new Client().init();
+  assert.equal(
+    (
+      await user.call("POST", "/api/v1/customers", {
+        ...customer,
+        email: "paging@example.test",
+        password: "TestPassword123!",
+      })
+    ).status,
+    200,
+  );
+  for (let index = 0; index < 3; index++) {
+    const chosen = (await user.slots())[0]!;
+    assert.equal((await user.book(chosen.id)).status, 200);
+  }
+  const first = await user.call(
+    "GET",
+    "/api/v1/reservations?period=upcoming&pageSize=2&page=1",
+  );
+  const second = await user.call(
+    "GET",
+    "/api/v1/reservations?period=upcoming&pageSize=2&page=2",
+  );
+  assert.equal(first.data.total, 3);
+  assert.equal(second.data.total, 3);
+  assert.equal(first.data.items.length, 2);
+  assert.equal(second.data.items.length, 1);
+  assert.equal(
+    new Set(
+      [...first.data.items, ...second.data.items].map(
+        (r: { id: string }) => r.id,
+      ),
+    ).size,
+    3,
+  );
+  const id = first.data.items[0].id;
+  assert.equal(
+    (
+      await user.call(
+        "PATCH",
+        `/api/v1/reservations/${id}`,
+        { action: "cancel", version: 1 },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    200,
+  );
+  const past = await user.call(
+    "GET",
+    "/api/v1/reservations?period=past&pageSize=1",
+  );
+  assert.equal(past.data.total, 1);
+  assert.equal(past.data.items[0].id, id);
+  assert.equal(
+    (await user.call("GET", "/api/v1/reservations?period=upcoming&pageSize=1"))
+      .data.total,
+    2,
+  );
+  assert.equal(
+    (await user.call("GET", "/api/v1/reservations?period=invalid")).status,
+    422,
+  );
+  assert.equal((await user.call("GET", "/api/v1/operations")).status, 403);
+  // Leave no active holds for subsequent conflict tests in this isolated database.
+  for (const row of [...first.data.items.slice(1), ...second.data.items]) {
+    assert.equal(
+      (
+        await manager.call(
+          "PATCH",
+          `/api/v1/reservations/${row.id}`,
+          { action: "cancel", version: 1 },
+          { "idempotency-key": randomUUID() },
+        )
+      ).status,
+      200,
+    );
+  }
+});
+
+test("provider endpoints stay absent while manual collections have their own schema", async () => {
   for (const url of [
     "/api/v1/payments",
     "/api/v1/payments/manual",
     "/api/v1/payments/records",
-    "/api/v1/payment-settings",
   ]) {
     assert.equal(app.hasRoute({ method: "POST", url }), false);
     assert.equal(app.hasRoute({ method: "GET", url }), false);
@@ -197,7 +736,7 @@ test("payment backend is absent while provider selection is deferred", async () 
   const result = await pool.query(
     "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'payments'",
   );
-  assert.equal(result.rowCount, 0);
+  assert.equal(result.rowCount, 1);
 });
 
 test("contracts, CSRF, origin, session rotation, ownership and deny-by-default", async () => {

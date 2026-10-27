@@ -5,4 +5,6 @@ GRANT USAGE ON SCHEMA salon,identity,reservations,notifications,platform TO salo
 GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA salon,identity,reservations,notifications,platform TO salon_app;
 GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA platform TO salon_app;
 REVOKE UPDATE,DELETE ON platform.audit FROM salon_app;
+GRANT USAGE ON SCHEMA payments TO salon_app;
+GRANT SELECT,INSERT ON payments.collections TO salon_app;
 -- No CREATE, TRUNCATE, schema ownership or migration privileges are granted.

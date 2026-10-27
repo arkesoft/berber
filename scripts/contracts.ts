@@ -48,6 +48,17 @@ for (const [operationId, endpoint] of Object.entries(endpoints)) {
       });
   if (operationId === "reservations") {
     parameters.push({
+      name: "period",
+      in: "query",
+      schema: {
+        type: "string",
+        enum: ["all", "upcoming", "past"],
+        default: "all",
+      },
+      description:
+        "Filter active or terminal reservation states before pagination.",
+    });
+    parameters.push({
       name: "date",
       in: "query",
       schema: { type: "string", format: "date" },
@@ -61,7 +72,7 @@ for (const [operationId, endpoint] of Object.entries(endpoints)) {
           minimum: 1,
           ...(name === "pageSize"
             ? { maximum: 100, default: 20 }
-            : { default: 1 }),
+            : { maximum: 10000, default: 1 }),
         },
       });
   }
@@ -100,7 +111,7 @@ const document = {
   openapi: "3.1.0",
   info: {
     title: "Salon API Contract",
-    version: "1.1.0",
+    version: "1.3.0",
     description:
       "Single-salon API. PostgreSQL backend and frontend mocks share schemas. Payment-provider selection and implementation are deferred. The payment endpoint describes the existing frontend demo only.",
   },

@@ -21,6 +21,7 @@ export function toDto(
 ): ReservationDto {
   return {
     id: b.id,
+    chairId: b.chairId,
     version: b.version,
     customer: b.customer,
     customerId: b.customerId,
@@ -32,6 +33,7 @@ export function toDto(
     endsAt: b.endsAt,
     total: { amount: b.total, currency: "TRY" },
     deposit: { amount: b.deposit, currency: "TRY" },
+    received: { amount: b.receivedAmount ?? 0, currency: "TRY" },
     status: b.status,
     paymentStatus: b.paymentStatus,
     holdExpiresAt: b.holdExpiresAt,
@@ -69,7 +71,10 @@ export async function slots(
       .filter((b) => b.staffId === staffId)
       .map((b) => ({ startsAt: b.startsAt, endsAt: b.occupiedUntil })),
     chairs: catalog.chairs
-      .filter((c) => c.active)
+      .filter(
+        (c) =>
+          c.active && (!c.assignedStaffId || c.assignedStaffId === staffId),
+      )
       .map((c) => ({
         id: c.id,
         busy: busy
@@ -122,6 +127,9 @@ export class BookingService {
         );
         const service = catalog.services.find((s) => s.id === input.serviceId)!,
           staff = catalog.staff.find((s) => s.id === input.staffId)!;
+        const deposit = catalog.paymentSettings.depositEnabled
+          ? service.deposit.amount
+          : 0;
         const id = randomUUID(),
           guest = context.actor
             ? null
@@ -145,11 +153,12 @@ export class BookingService {
           endsAt: chosen.endsAt,
           occupiedUntil: chosen.occupiedUntil,
           total: service.price.amount,
-          deposit: service.deposit.amount,
-          status: service.deposit.amount > 0 ? "pending_payment" : "confirmed",
-          paymentStatus: service.deposit.amount > 0 ? "pending" : "unpaid",
+          deposit,
+          receivedAmount: 0,
+          status: deposit > 0 ? "pending_payment" : "confirmed",
+          paymentStatus: deposit > 0 ? "pending" : "unpaid",
           holdExpiresAt:
-            service.deposit.amount > 0
+            deposit > 0
               ? new Date(
                   Date.parse(now) + this.holdMinutes * 60000,
                 ).toISOString()

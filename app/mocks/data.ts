@@ -52,6 +52,7 @@ export function seedData(): Operations {
   const reservations: Reservation[] = ["09:30", "11:00", "14:00", "16:00"].map(
     (time, i) => ({
       id: `r-${i + 1}`,
+      chairId: i % 2 ? "chair-2" : "chair-1",
       version: 1,
       customer: {
         name: ["Deniz Yılmaz", "Mert Aydın", "Ege Şahin", "Arda Koç"][i]!,
@@ -68,6 +69,7 @@ export function seedData(): Operations {
       total: money(65000),
       deposit: money(15000),
       status: "confirmed",
+      received: money(15000),
       paymentStatus: "paid",
       holdExpiresAt: null,
       allowedActions: ["cancel", "reschedule", "start", "no_show"],

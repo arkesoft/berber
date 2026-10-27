@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RequestIntent } from "../../shared/api/intent";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as s from "../../contracts/schemas";
 import { request } from "../../shared/api/http";
-import { Button, Confirm, Field, Notice, QueryState } from "../../shared/ui";
+import {
+  Button,
+  Confirm,
+  Field,
+  Notice,
+  QueryState,
+  Modal,
+} from "../../shared/ui";
+import { Pagination } from "../../shared/Pagination";
 import {
   formatDate,
   formatMoney,
@@ -15,6 +23,7 @@ import { t } from "../../shared/i18n";
 import { PageIntro } from "../../shared/PageIntro";
 import { landingPhotos } from "../../config/landing";
 import { Access } from "../identity";
+import { CollectionButton, CollectionSummary } from "../payments";
 import { useAvailability, useCatalog } from "../booking";
 export function AppointmentsPage() {
   return (
@@ -24,19 +33,43 @@ export function AppointmentsPage() {
   );
 }
 function CustomerAppointments() {
-  const [filter, setFilter] = useState("upcoming"),
-    [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const filter = params.get("period") === "past" ? "past" : "upcoming";
+  const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1));
+  const pageSize = [10, 20, 50].includes(Number(params.get("size")))
+    ? Number(params.get("size"))
+    : 10;
+  function change(values: Record<string, string | number>) {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      for (const [key, value] of Object.entries(values))
+        next.set(key, String(value));
+      return next;
+    });
+  }
   const query = useQuery({
-    queryKey: ["reservations", page],
+    queryKey: ["reservations", filter, page, pageSize],
     queryFn: ({ signal }) =>
-      request(`/reservations?page=${page}&pageSize=20`, s.page, { signal }),
+      request(
+        `/reservations?period=${filter}&page=${page}&pageSize=${pageSize}`,
+        s.page,
+        { signal },
+      ),
   });
-  const rows =
-    query.data?.items.filter((r) =>
-      filter === "upcoming"
-        ? ["confirmed", "pending_payment", "in_service"].includes(r.status)
-        : !["confirmed", "pending_payment", "in_service"].includes(r.status),
-    ) ?? [];
+  const rows = query.data?.items ?? [];
+  useEffect(() => {
+    if (!query.data) return;
+    const last = Math.max(1, Math.ceil(query.data.total / pageSize));
+    if (page > last)
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("page", String(last));
+          return next;
+        },
+        { replace: true },
+      );
+  }, [page, pageSize, query.data, setParams]);
   return (
     <section>
       <PageIntro
@@ -52,14 +85,14 @@ function CustomerAppointments() {
         <Button
           variant="quiet"
           aria-pressed={filter === "upcoming"}
-          onClick={() => setFilter("upcoming")}
+          onClick={() => change({ period: "upcoming", page: 1 })}
         >
           {t("copy.b1db604980")}
         </Button>
         <Button
           variant="quiet"
           aria-pressed={filter === "past"}
-          onClick={() => setFilter("past")}
+          onClick={() => change({ period: "past", page: 1 })}
         >
           {t("copy.207848e015")}
         </Button>
@@ -69,24 +102,15 @@ function CustomerAppointments() {
         error={query.error}
         retry={() => void query.refetch()}
       >
-        <AppointmentRows rows={rows} role="customer" />
-        {query.data && query.data.total > 20 && (
-          <div className="actions">
-            <Button disabled={page === 1} onClick={() => setPage(page - 1)}>
-              {t("copy.b74566b03e")}
-            </Button>
-            <span>
-              {t("copy.ed00c31245")}
-              {page} · {query.data.total}
-              {t("copy.31830ba6bc")}
-            </span>
-            <Button
-              disabled={page * 20 >= query.data.total}
-              onClick={() => setPage(page + 1)}
-            >
-              {t("copy.4c68362c33")}
-            </Button>
-          </div>
+        <AppointmentRows rows={rows} role="customer" paginate={false} />
+        {query.data && (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={query.data.total}
+            onPage={(page) => change({ page })}
+            onPageSize={(size) => change({ size, page: 1 })}
+          />
         )}
       </QueryState>
     </section>
@@ -95,16 +119,41 @@ function CustomerAppointments() {
 export function AppointmentRows({
   rows,
   role,
+  paginate = true,
 }: {
   rows: s.Reservation[];
   role: s.Role;
+  paginate?: boolean;
 }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const current = Math.min(
+    page,
+    Math.max(1, Math.ceil(rows.length / pageSize)),
+  );
+  const shown = paginate
+    ? rows.slice((current - 1) * pageSize, current * pageSize)
+    : rows;
   return rows.length ? (
-    <div className="appointments-list">
-      {rows.map((r) => (
-        <AppointmentRow key={r.id} reservation={r} role={role} />
-      ))}
-    </div>
+    <>
+      <div className="appointments-list">
+        {shown.map((r) => (
+          <AppointmentRow key={r.id} reservation={r} role={role} />
+        ))}
+      </div>
+      {paginate && (
+        <Pagination
+          page={current}
+          pageSize={pageSize}
+          total={rows.length}
+          onPage={setPage}
+          onPageSize={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+      )}
+    </>
   ) : (
     <Notice>{t("copy.7e57176533")}</Notice>
   );
@@ -118,6 +167,7 @@ function AppointmentRow({
 }) {
   const [rescheduling, setRescheduling] = useState(false),
     cache = useQueryClient();
+  const [details, setDetails] = useState(false);
   const [intent] = useState(() => new RequestIntent());
   const mutation = useMutation({
     mutationFn: ({
@@ -168,8 +218,10 @@ function AppointmentRow({
         <span className="muted">
           {formatMoney(r.total)} · {t(`payment.${r.paymentStatus}`)}
         </span>
+        <CollectionSummary reservation={r} />
       </div>
       <div className="row-actions">
+        {role === "manager" && <CollectionButton reservation={r} />}
         {actions.includes("reschedule") && (
           <Button
             variant="quiet"
@@ -181,6 +233,7 @@ function AppointmentRow({
         )}
         {actions.includes("cancel") && (
           <Confirm
+            disabled={mutation.isPending}
             label={t("copy.a73d420f52")}
             description={t("copy.d31414963b", {
               value0: formatDate(r.startsAt),
@@ -199,38 +252,58 @@ function AppointmentRow({
           </Button>
         )}
         {actions.includes("complete") && (
-          <Button
+          <Confirm
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ action: "complete" })}
-          >
-            {t("copy.978c619ffe")}
-          </Button>
+            label={t("copy.978c619ffe")}
+            description={t("panel.confirmComplete")}
+            confirmLabel={t("panel.confirm")}
+            onConfirm={() => mutation.mutate({ action: "complete" })}
+          />
         )}
         {actions.includes("no_show") && (
-          <Button
-            variant="quiet"
+          <Confirm
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate({ action: "no_show" })}
-          >
-            {t("copy.0dd4afe767")}
-          </Button>
+            label={t("copy.0dd4afe767")}
+            description={t("panel.confirmNoShow")}
+            confirmLabel={t("panel.confirm")}
+            onConfirm={() => mutation.mutate({ action: "no_show" })}
+          />
         )}
-        <details>
-          <summary>{t("copy.5727060279")}</summary>
-          <p>
-            {t("copy.6be3cc1366")}
-            {r.id}
-          </p>
-          <p>
-            {t("copy.91b0a60019")}
-            {formatMoney(r.deposit)}
-          </p>
-          <p>
-            {t("copy.97157ad032")}
-            {formatTime(r.endsAt)}
-          </p>
-          <p>{r.customer.name}</p>
-        </details>
+        <Button variant="quiet" onClick={() => setDetails(true)}>
+          {t("copy.5727060279")}
+        </Button>
+        {details && (
+          <Modal title={t("panel.details")} onClose={() => setDetails(false)}>
+            <p>
+              <strong>{r.serviceName}</strong> · {r.staffName}
+            </p>
+            <p>
+              {formatDate(r.startsAt)} · {formatTime(r.startsAt)}–
+              {formatTime(r.endsAt)}
+            </p>
+            <p>
+              {t(`status.${r.status}`)} · {formatMoney(r.total)}
+            </p>
+            {r.chairName && (
+              <p>
+                {t("panel.chair")}: {r.chairName}
+              </p>
+            )}
+            <p>
+              {t("copy.6be3cc1366")}
+              {r.id}
+            </p>
+            <p>
+              {t("copy.91b0a60019")}
+              {formatMoney(r.deposit)}
+            </p>
+            <p>
+              {t("copy.97157ad032")}
+              {formatTime(r.endsAt)}
+            </p>
+            <p>{r.customer.name}</p>
+          </Modal>
+        )}
       </div>
       {mutation.error && (
         <Notice error>
@@ -247,13 +320,23 @@ function AppointmentRow({
         </Notice>
       )}
       {rescheduling && (
-        <Reschedule
-          reservation={r}
-          pending={mutation.isPending}
-          onSubmit={(slotId) =>
-            mutation.mutate({ action: "reschedule", slotId })
-          }
-        />
+        <Modal
+          title={t("panel.reschedule")}
+          onClose={() => setRescheduling(false)}
+          busy={mutation.isPending}
+        >
+          <p>
+            {r.serviceName} · {r.staffName}
+          </p>
+          {mutation.error && <Notice error>{mutation.error.message}</Notice>}
+          <Reschedule
+            reservation={r}
+            pending={mutation.isPending}
+            onSubmit={(slotId) =>
+              mutation.mutate({ action: "reschedule", slotId })
+            }
+          />
+        </Modal>
       )}
     </article>
   );

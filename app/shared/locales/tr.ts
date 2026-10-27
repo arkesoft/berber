@@ -155,7 +155,7 @@ export const uiMessages = {
   "copy.b9138717ff": "Çalışanlar",
   "copy.6a4046b48b": "Mesai ve izin",
   "copy.c705135d51": "Müşteriler",
-  "copy.813c5cc8a4": "Kapora kayıtları",
+  "copy.813c5cc8a4": "Tahsilat kayıtları",
   "copy.bc46f26e25": "Temel raporlar",
   "copy.397ee7610b": "Salon ayarları",
   "copy.60fb851ebe": "Günlük planım",

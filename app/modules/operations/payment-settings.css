@@ -48,3 +48,22 @@
     }
   }
 }
+.payment-policy {
+  padding-block-end: 2rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+.policy-toggle input {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+}
+.collection-summary {
+  gap: 0.25rem;
+}

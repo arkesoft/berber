@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type * as s from "../../../../app/contracts/schemas.js";
 export type CatalogSnapshot = {
+  paymentSettings: z.infer<typeof s.paymentSettings>;
   salon: z.infer<typeof s.salon>;
   buffer: number;
   services: z.infer<typeof s.service>[];
