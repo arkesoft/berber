@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Salon API Contract",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "description": "Single-salon API. PostgreSQL backend and frontend mocks share schemas. Payment-provider selection and implementation are deferred. The payment endpoint describes the existing frontend demo only."
   },
   "servers": [
@@ -2770,6 +2770,12 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 90
+                        },
+                        "slotIntervalMinutes": {
+                          "default": 15,
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 120
                         }
                       },
                       "required": [
@@ -2780,7 +2786,8 @@
                         "phone",
                         "timezone",
                         "currency",
-                        "bookingDays"
+                        "bookingDays",
+                        "slotIntervalMinutes"
                       ],
                       "additionalProperties": false
                     },
@@ -3472,6 +3479,51 @@
                         "additionalProperties": false
                       }
                     },
+                    "unavailableSlots": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "staffId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "startsAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "endsAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "busy",
+                              "unavailable",
+                              "past"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "staffId",
+                          "startsAt",
+                          "endsAt",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "timezone": {
                       "type": "string"
                     },
@@ -3483,6 +3535,7 @@
                   },
                   "required": [
                     "slots",
+                    "unavailableSlots",
                     "timezone",
                     "fetchedAt"
                   ],
@@ -9283,6 +9336,12 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 90
+                        },
+                        "slotIntervalMinutes": {
+                          "default": 15,
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 120
                         }
                       },
                       "required": [
@@ -9293,7 +9352,8 @@
                         "phone",
                         "timezone",
                         "currency",
-                        "bookingDays"
+                        "bookingDays",
+                        "slotIntervalMinutes"
                       ],
                       "additionalProperties": false
                     },
@@ -10579,6 +10639,12 @@
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 90
+                          },
+                          "slotIntervalMinutes": {
+                            "default": 15,
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 120
                           }
                         },
                         "required": [
@@ -10589,7 +10655,8 @@
                           "phone",
                           "timezone",
                           "currency",
-                          "bookingDays"
+                          "bookingDays",
+                          "slotIntervalMinutes"
                         ],
                         "additionalProperties": false
                       }
@@ -10688,6 +10755,12 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 90
+                        },
+                        "slotIntervalMinutes": {
+                          "default": 15,
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 120
                         }
                       },
                       "required": [
@@ -10698,7 +10771,8 @@
                         "phone",
                         "timezone",
                         "currency",
-                        "bookingDays"
+                        "bookingDays",
+                        "slotIntervalMinutes"
                       ],
                       "additionalProperties": false
                     },

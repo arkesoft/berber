@@ -20,6 +20,7 @@ import {
 } from "../../shared/format";
 import { t } from "../../shared/i18n";
 import { PageIntro } from "../../shared/PageIntro";
+import { SlotPicker } from "../../shared/SlotPicker";
 import { landingPhotos } from "../../config/landing";
 import { useSession } from "../identity";
 import { useAvailability, useCatalog } from "./api";
@@ -305,31 +306,14 @@ export function BookingPage() {
                   error={times.error}
                   retry={() => void times.refetch()}
                 >
-                  {times.data?.slots.length === 0 ? (
-                    <Notice>{t("copy.989151f3b4")}</Notice>
-                  ) : (
-                    <fieldset className="slot-grid">
-                      <legend>{t("copy.c076b802b6")}</legend>
-                      {times.data?.slots.map((slot) => (
-                        <label
-                          className={`slot ${slotId === slot.id ? "selected" : ""}`}
-                          key={slot.id}
-                        >
-                          <input
-                            type="radio"
-                            name="slot"
-                            checked={slotId === slot.id}
-                            onChange={() => setSlotId(slot.id)}
-                          />
-                          <span>
-                            {formatTime(
-                              slot.startsAt,
-                              query.data?.salon.timezone,
-                            )}
-                          </span>
-                        </label>
-                      ))}
-                    </fieldset>
+                  {times.data && (
+                    <SlotPicker
+                      data={times.data}
+                      name="slot"
+                      value={slotId}
+                      onChange={setSlotId}
+                      legend={t("copy.c076b802b6")}
+                    />
                   )}
                 </QueryState>
                 <div className="actions">
@@ -337,7 +321,9 @@ export function BookingPage() {
                     {t("copy.b68a3150ea")}
                   </Button>
                   <Button
-                    disabled={!selectedSlot || times.isFetching}
+                    disabled={
+                      !selectedSlot || times.isFetching || times.isError
+                    }
                     onClick={() => setStep(3)}
                   >
                     {t("copy.f6420582fd")}

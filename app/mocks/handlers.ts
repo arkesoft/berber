@@ -125,12 +125,15 @@ function workspace(): s.Operations {
 function overlaps(a: string, b: string, c: string, d: string) {
   return new Date(a) < new Date(d) && new Date(c) < new Date(b);
 }
-function slots(
+function slotOptions(
   serviceId: string,
   staffId: string,
   date: string,
   ignoreId?: string,
-): (s.Slot & { chairId: string })[] {
+): (s.Slot & {
+  chairId: string | null;
+  status: "available" | "busy" | "unavailable" | "past";
+})[] {
   const service = data.services.find((x) => x.id === serviceId && x.active);
   const person = data.staff.find(
     (x) => x.id === staffId && x.active && x.serviceIds.includes(serviceId),
@@ -147,41 +150,49 @@ function slots(
   const shifts = data.schedules.filter(
     (x) => x.staffId === staffId && x.date === date,
   );
-  if (shifts.some((x) => x.kind === "leave")) return [];
   const shift = shifts.find((x) => x.kind === "shift");
   const start = shift?.startsAt ?? "09:00",
     end = shift?.endsAt ?? "19:00";
-  const result: (s.Slot & { chairId: string })[] = [];
-  for (let minute = 9 * 60; minute < 19 * 60; minute += 30) {
-    const time = `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-    const startsAt = `${date}T${time}:00+03:00`;
+  const result: ReturnType<typeof slotOptions> = [];
+  const startMinute = Number(start.slice(0, 2)) * 60 + Number(start.slice(3));
+  let endMinute = Number(end.slice(0, 2)) * 60 + Number(end.slice(3));
+  if (endMinute <= startMinute) endMinute += 1440;
+  const midnight = Date.parse(`${date}T00:00:00+03:00`);
+  for (
+    let minute = startMinute;
+    minute < Math.min(endMinute, 1440);
+    minute += data.salon.slotIntervalMinutes
+  ) {
+    const startsAt = new Date(midnight + minute * 60000).toISOString();
     const endsAt = new Date(
       new Date(startsAt).getTime() + service.durationMinutes * 60_000,
     ).toISOString();
-    if (
-      time < start ||
-      new Date(endsAt) > new Date(`${date}T${end}:00+03:00`) ||
-      new Date(startsAt) <= now()
-    )
-      continue;
-    if (
+    const occupiedUntil = new Date(
+      Date.parse(endsAt) + 10 * 60000,
+    ).toISOString();
+    if (Date.parse(occupiedUntil) > midnight + endMinute * 60000) continue;
+    const unavailable =
+      shifts.some((x) => x.kind === "leave") ||
       shifts.some(
         (x) =>
           x.kind === "break" &&
           overlaps(
             startsAt,
-            endsAt,
+            occupiedUntil,
             `${date}T${x.startsAt}:00+03:00`,
             `${date}T${x.endsAt}:00+03:00`,
           ),
-      )
-    )
-      continue;
+      );
     const busy = data.reservations.filter(
       (r) =>
         r.id !== ignoreId &&
         ["pending_payment", "confirmed", "in_service"].includes(r.status) &&
-        overlaps(startsAt, endsAt, r.startsAt, r.endsAt),
+        overlaps(
+          startsAt,
+          occupiedUntil,
+          r.startsAt,
+          new Date(Date.parse(r.endsAt) + 10 * 60000).toISOString(),
+        ),
     );
     const chair = data.chairs.find(
       (c) =>
@@ -189,16 +200,33 @@ function slots(
         (!c.assignedStaffId || c.assignedStaffId === staffId) &&
         !busy.some((r) => r.chairId === c.id),
     );
-    if (busy.some((r) => r.staffId === staffId) || !chair) continue;
+    const eligible = data.chairs.some(
+      (c) => c.active && (!c.assignedStaffId || c.assignedStaffId === staffId),
+    );
+    const status =
+      new Date(startsAt) <= now()
+        ? "past"
+        : unavailable || !eligible
+          ? "unavailable"
+          : busy.some((r) => r.staffId === staffId) || !chair
+            ? "busy"
+            : "available";
     result.push({
       id: `${staffId}|${startsAt}`,
       staffId,
       startsAt,
       endsAt,
-      chairId: chair.id,
+      chairId: status === "available" ? chair!.id : null,
+      status,
     });
   }
   return result;
+}
+function slots(...args: Parameters<typeof slotOptions>) {
+  return slotOptions(...args).filter(
+    (slot): slot is typeof slot & { chairId: string } =>
+      slot.status === "available" && slot.chairId !== null,
+  );
 }
 
 export const handlers = [
@@ -254,6 +282,14 @@ export const handlers = [
           422,
         );
       return reply(s.availability, {
+        unavailableSlots:
+          scenario === "empty"
+            ? []
+            : slotOptions(
+                url.searchParams.get("serviceId")!,
+                url.searchParams.get("staffId")!,
+                date,
+              ).filter((slot) => slot.status !== "available"),
         slots:
           scenario === "empty"
             ? []

@@ -183,6 +183,148 @@ class Client {
     );
   }
 }
+test("manager interval updates preserve bookings; busy slots stay public without PII and cannot be booked", async () => {
+  const manager = await new Client().login();
+  const employee = await new Client().login("staff@example.test");
+  const salon = s.operations.parse(
+    (await manager.call("GET", "/api/v1/operations")).data,
+  ).salon;
+  assert.equal(salon.slotIntervalMinutes, 15);
+  const initial = await manager.slots("one", "2026-10-29");
+  const booked = await manager.book(initial[1]!.id);
+  assert.equal(booked.status, 200);
+  const change = {
+    resource: "salon",
+    value: { ...salon, slotIntervalMinutes: 20 },
+  };
+  assert.equal(
+    (
+      await employee.call("PUT", "/api/v1/management", change, {
+        "idempotency-key": randomUUID(),
+      })
+    ).status,
+    403,
+  );
+  for (const slotIntervalMinutes of [0, 121, 7.5])
+    assert.equal(
+      (
+        await manager.call(
+          "PUT",
+          "/api/v1/management",
+          { ...change, value: { ...salon, slotIntervalMinutes } },
+          { "idempotency-key": randomUUID() },
+        )
+      ).status,
+      422,
+    );
+  assert.equal(
+    (
+      await manager.call("PUT", "/api/v1/management", change, {
+        "idempotency-key": randomUUID(),
+      })
+    ).status,
+    200,
+  );
+  const publicClient = await new Client().init();
+  const view = s.availability.parse(
+    (
+      await publicClient.call(
+        "GET",
+        "/api/v1/availability?serviceId=cut&staffId=one&date=2026-10-29",
+      )
+    ).data,
+  );
+  const all = [...view.slots, ...view.unavailableSlots].sort(
+    (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt),
+  );
+  assert.ok(view.unavailableSlots.some((x) => x.status === "busy"));
+  assert.equal(
+    Date.parse(all[1]!.startsAt) - Date.parse(all[0]!.startsAt),
+    20 * 60000,
+  );
+  assert.ok(
+    view.unavailableSlots.every((x) =>
+      Object.keys(x).every((key) =>
+        ["id", "staffId", "startsAt", "endsAt", "status"].includes(key),
+      ),
+    ),
+  );
+  assert.equal(
+    (
+      await publicClient.book(
+        view.unavailableSlots.find((x) => x.status === "busy")!.id,
+      )
+    ).data.code,
+    "SLOT_CONFLICT",
+  );
+  assert.equal(
+    (await publicClient.book(initial[3]!.id)).data.code,
+    "SLOT_CONFLICT",
+  );
+  const other = s.availability.parse(
+    (
+      await publicClient.call(
+        "GET",
+        "/api/v1/availability?serviceId=cut&staffId=two&date=2026-10-29",
+      )
+    ).data,
+  );
+  assert.ok(other.unavailableSlots.some((x) => x.status === "busy"));
+  const history = s.collections.parse(
+    (
+      await manager.call(
+        "GET",
+        `/api/v1/reservations/${booked.data.reservation.id}/collections`,
+      )
+    ).data,
+  );
+  assert.equal(history.reservation.startsAt, booked.data.reservation.startsAt);
+  assert.equal(history.reservation.version, 1);
+  await assert.rejects(
+    pool.query(
+      "UPDATE salon.settings SET document=jsonb_set(document,'{slotIntervalMinutes}','0') WHERE id=$1",
+      [config.SALON_ID],
+    ),
+    (e: unknown) => (e as { code: string }).code === "23514",
+  );
+  const column = (
+    await pool.query(
+      "SELECT slot_interval_minutes FROM salon.settings WHERE id=$1",
+      [config.SALON_ID],
+    )
+  ).rows[0]!;
+  assert.equal(column.slot_interval_minutes, 20);
+  assert.equal(
+    (
+      await manager.call(
+        "PATCH",
+        `/api/v1/reservations/${booked.data.reservation.id}`,
+        { action: "cancel", version: 1 },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    200,
+  );
+  const released = await manager.slots("one", "2026-10-29");
+  assert.ok(
+    released.some(
+      (x) =>
+        x.id === view.unavailableSlots.find((x) => x.status === "busy")!.id,
+    ),
+  );
+  assert.equal(
+    (
+      await manager.call(
+        "PUT",
+        "/api/v1/management",
+        { resource: "salon", value: salon },
+        { "idempotency-key": randomUUID() },
+      )
+    ).status,
+    200,
+  );
+});
+
 test("collection ledger enforces amounts, replay, concurrent versions, reversal, FK and immutability", async () => {
   const manager = await new Client().login();
   const employee = await new Client().login("staff@example.test");
@@ -889,6 +1031,16 @@ test("rescheduling and management edits keep booked resources consistent", async
   );
   assert.equal(moved.status, 200);
   assert.equal(moved.data.startsAt, target.startsAt);
+  assert.equal(moved.data.id, r.data.reservation.id);
+  assert.equal(moved.data.status, r.data.reservation.status);
+  const persisted = (
+    await pool.query(
+      "SELECT starts_at,status FROM reservations.bookings WHERE id=$1",
+      [r.data.reservation.id],
+    )
+  ).rows[0]!;
+  assert.equal(persisted.starts_at.toISOString(), target.startsAt);
+  assert.equal(persisted.status, r.data.reservation.status);
   const rejected = await manager.call(
     "PUT",
     "/api/v1/management",

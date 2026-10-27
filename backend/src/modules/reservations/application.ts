@@ -5,7 +5,7 @@ import type {
 } from "../../../../app/contracts/schemas.js";
 import { ensure } from "../../kernel/errors.js";
 import type { RequestContext } from "../../kernel/actor.js";
-import { candidateSlots, localDate } from "../scheduling/domain.js";
+import { slotOverview, localDate } from "../scheduling/domain.js";
 import {
   Reservation,
   actions,
@@ -43,7 +43,7 @@ export function toDto(
 export function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
-export async function slots(
+async function slotOptions(
   store: BookingStore,
   serviceId: string,
   staffId: string,
@@ -58,13 +58,14 @@ export async function slots(
     );
   if (!service || !staff) return [];
   const busy = (await store.busy()).filter((b) => b.id !== ignoreId);
-  return candidateSlots({
+  return slotOverview({
     date,
     zone: catalog.salon.timezone,
     now,
     bookingDays: catalog.salon.bookingDays,
     duration: service.durationMinutes,
     buffer: catalog.buffer,
+    intervalMinutes: catalog.salon.slotIntervalMinutes,
     shifts: catalog.intervals.filter((s) => s.staffId === staffId),
     closedDates: catalog.closedDates,
     busy: busy
@@ -83,6 +84,12 @@ export async function slots(
       })),
   }).map((s) => ({ ...s, id: `${staffId}|${s.startsAt}`, staffId }));
 }
+export async function slots(...args: Parameters<typeof slotOptions>) {
+  return (await slotOptions(...args)).filter(
+    (slot): slot is typeof slot & { chairId: string } =>
+      slot.status === "available" && slot.chairId !== null,
+  );
+}
 export class BookingService {
   constructor(
     private readonly tx: BookingTransactions,
@@ -91,11 +98,21 @@ export class BookingService {
     private readonly holdMinutes: number,
   ) {}
   availability(service: string, staff: string, date: string) {
-    return this.tx.read(async (store) => ({
-      slots: await slots(store, service, staff, date, this.clock()),
-      timezone: (await store.catalog()).salon.timezone,
-      fetchedAt: this.clock(),
-    }));
+    return this.tx.read(async (store) => {
+      const options = await slotOptions(
+        store,
+        service,
+        staff,
+        date,
+        this.clock(),
+      );
+      return {
+        slots: options.filter((slot) => slot.status === "available"),
+        unavailableSlots: options.filter((slot) => slot.status !== "available"),
+        timezone: (await store.catalog()).salon.timezone,
+        fetchedAt: this.clock(),
+      };
+    });
   }
   create(input: CreateReservation, context: RequestContext, key: string) {
     const scope = `create:${context.actor?.id ?? context.sessionId}`;

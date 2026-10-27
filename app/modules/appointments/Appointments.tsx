@@ -13,6 +13,7 @@ import {
   Modal,
 } from "../../shared/ui";
 import { Pagination } from "../../shared/Pagination";
+import { SlotPicker } from "../../shared/SlotPicker";
 import {
   formatDate,
   formatMoney,
@@ -377,24 +378,23 @@ function Reschedule({
         error={query.error}
         retry={() => void query.refetch()}
       >
-        <fieldset className="slot-grid">
-          <legend>{t("copy.e7f38d38f3")}</legend>
-          {query.data?.slots.map((slot) => (
-            <label className="slot" key={slot.id}>
-              <input
-                type="radio"
-                name={`reschedule-${r.id}`}
-                checked={slotId === slot.id}
-                onChange={() => setSlot(slot.id)}
-              />
-              {formatTime(slot.startsAt)}
-            </label>
-          ))}
-        </fieldset>
-        {query.data?.slots.length === 0 && <p>{t("copy.880588123b")}</p>}
+        {query.data && (
+          <SlotPicker
+            data={query.data}
+            name={`reschedule-${r.id}`}
+            value={slotId}
+            onChange={setSlot}
+            legend={t("copy.e7f38d38f3")}
+          />
+        )}
       </QueryState>
       <Button
-        disabled={pending || !query.data?.slots.some((x) => x.id === slotId)}
+        disabled={
+          pending ||
+          query.isFetching ||
+          query.isError ||
+          !query.data?.slots.some((x) => x.id === slotId)
+        }
         onClick={() => onSubmit(slotId)}
       >
         {t("copy.359e38a751")}
