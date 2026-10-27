@@ -121,6 +121,11 @@ for (const width of [390, 768, 1440]) {
         await edit.click();
         await expect(page.locator(".editor")).toBeVisible();
         await audit(page, `editor-${route}-${width}`);
+        await page
+          .getByRole("dialog")
+          .getByRole("button", { name: "Kapat", exact: true })
+          .click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
       }
     }
   });
@@ -169,7 +174,10 @@ for (const width of [390, 768, 1440]) {
     await page.getByRole("button", { name: "Saati değiştir" }).first().click();
     await expect(page.getByLabel("Yeni randevu tarihi")).toBeVisible();
     await audit(page, `reschedule-${width}`);
-    await page.getByRole("button", { name: "Saati değiştir" }).first().click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Kapat", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Randevuyu iptal et" })
       .first()

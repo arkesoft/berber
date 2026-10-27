@@ -8,13 +8,25 @@ import {
 } from "../../contracts/schemas";
 import { request } from "../../shared/api/http";
 import { Button, Field, Notice, QueryState } from "../../shared/ui";
-import { addDays, formatDate, formatMoney } from "../../shared/format";
+import {
+  addDays,
+  formatDate,
+  formatMoney,
+  localDay,
+} from "../../shared/format";
+import { PagedList } from "../../shared/PagedList";
 import { t } from "../../shared/i18n";
 import { Access } from "../identity";
 import { AppointmentRows } from "../appointments";
 import { useCatalog } from "../booking";
 import { Management } from "./Management";
 import { PaymentSettings } from "./PaymentSettings";
+import {
+  CollectionButton,
+  CollectionSummary,
+  collectionStatus,
+  receivedAmount,
+} from "../payments";
 const managerNav = [
   ["", t("copy.4f72a8f34f")],
   ["takvim", t("copy.d67eeb1cfc")],
@@ -61,7 +73,10 @@ function OperationsPage({ role }: { role: Role }) {
   const [date, setDate] = useState(""),
     [weekly, setWeekly] = useState(false),
     [menuOpen, setMenuOpen] = useState(false);
-  const day = date || catalog.data?.today || "2026-10-26",
+  const [search, setSearch] = useState("");
+  const [staffId, setStaffId] = useState("");
+  const [status, setStatus] = useState("");
+  const day = date || catalog.data?.today || localDay(new Date().toISOString()),
     prefix = role === "manager" ? "/yonetim" : "/calisan";
   if (!title)
     return (
@@ -142,6 +157,90 @@ function OperationsPage({ role }: { role: Role }) {
                     >
                       {weekly ? t("copy.6cc0121569") : t("copy.433a25497a")}
                     </Button>
+                    <Button
+                      variant="quiet"
+                      onClick={() => setDate(addDays(day, -1))}
+                    >
+                      {t("panel.previousDay")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        setDate(
+                          catalog.data?.today ??
+                            localDay(new Date().toISOString()),
+                        )
+                      }
+                    >
+                      {t("panel.today")}
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      onClick={() => setDate(addDays(day, 1))}
+                    >
+                      {t("panel.nextDay")}
+                    </Button>
+                  </div>
+                  <div className="filter-row">
+                    <Field
+                      label={t("panel.search")}
+                      name="appointment-search"
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {role === "manager" && (
+                      <div className="field">
+                        <label htmlFor="plan-staff">{t("panel.staff")}</label>
+                        <select
+                          id="plan-staff"
+                          value={staffId}
+                          onChange={(e) => setStaffId(e.target.value)}
+                        >
+                          <option value="">{t("panel.all")}</option>
+                          {query.data.staff.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="field">
+                      <label htmlFor="plan-status">{t("panel.status")}</label>
+                      <select
+                        id="plan-status"
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value)}
+                      >
+                        <option value="">{t("panel.all")}</option>
+                        {[
+                          "confirmed",
+                          "pending_payment",
+                          "in_service",
+                          "completed",
+                          "cancelled",
+                          "no_show",
+                          "expired",
+                        ].map((value) => (
+                          <option key={value} value={value}>
+                            {t(`status.${value}` as Parameters<typeof t>[0])}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {(search || staffId || status) && (
+                      <Button
+                        variant="quiet"
+                        onClick={() => {
+                          setSearch("");
+                          setStaffId("");
+                          setStatus("");
+                        }}
+                      >
+                        {t("panel.clear")}
+                      </Button>
+                    )}
                   </div>
                   {section === "" && <Summary data={query.data} day={day} />}
                   {Array.from({ length: weekly ? 7 : 1 }, (_, index) =>
@@ -150,9 +249,17 @@ function OperationsPage({ role }: { role: Role }) {
                     <section className="day-plan" key={date}>
                       <h2>{formatDate(date)}</h2>
                       <AppointmentRows
+                        key={`${date}-${search}-${staffId}-${status}`}
                         role={role}
                         rows={query.data!.reservations.filter(
-                          (r) => r.startsAt.slice(0, 10) === date,
+                          (r) =>
+                            localDay(r.startsAt, query.data!.salon.timezone) ===
+                              date &&
+                            (!staffId || r.staffId === staffId) &&
+                            (!status || r.status === status) &&
+                            `${r.customer.name} ${r.staffName} ${r.serviceName}`
+                              .toLocaleLowerCase("tr")
+                              .includes(search.trim().toLocaleLowerCase("tr")),
                         )}
                       />
                     </section>
@@ -160,23 +267,35 @@ function OperationsPage({ role }: { role: Role }) {
                 </>
               )}
               {section === "hizmetler" && (
-                <Management resource="services" data={query.data} />
+                <Management
+                  key="services"
+                  resource="services"
+                  data={query.data}
+                />
               )}
               {section === "calisanlar" && (
-                <Management resource="staff" data={query.data} />
+                <Management key="staff" resource="staff" data={query.data} />
               )}
               {section === "koltuklar" && (
-                <Management resource="chairs" data={query.data} />
+                <Management key="chairs" resource="chairs" data={query.data} />
               )}
               {section === "ayarlar" && (
-                <Management resource="salon" data={query.data} />
+                <Management key="salon" resource="salon" data={query.data} />
               )}
               {section === "mesai" &&
                 (role === "manager" ? (
-                  <Management resource="schedules" data={query.data} />
+                  <Management
+                    key="schedules"
+                    resource="schedules"
+                    data={query.data}
+                  />
                 ) : (
-                  <div className="resource-list">
-                    {query.data.schedules.map((x) => (
+                  <PagedList
+                    items={query.data.schedules}
+                    searchText={(x) =>
+                      `${x.date} ${x.note} ${formatDate(x.date)} ${x.kind === "shift" ? t("copy.e42274ad38") : x.kind === "break" ? t("copy.d0dd99fbac") : t("copy.a5fad871d8")}`
+                    }
+                    renderItem={(x) => (
                       <article className="resource-row" key={x.id}>
                         <div>
                           <h2>
@@ -192,10 +311,16 @@ function OperationsPage({ role }: { role: Role }) {
                           <p>{x.note}</p>
                         </div>
                       </article>
-                    ))}
-                  </div>
+                    )}
+                  />
                 ))}
-              {section === "musteriler" && <Customers data={query.data} />}
+              {section === "musteriler" && (
+                <Management
+                  key="customers"
+                  resource="customers"
+                  data={query.data}
+                />
+              )}
               {section === "odemeler" && <PaymentRecords data={query.data} />}
               {section === "odeme-ayarlari" && <PaymentSettings />}
               {section === "raporlar" && <Reports data={query.data} />}
@@ -207,7 +332,9 @@ function OperationsPage({ role }: { role: Role }) {
   );
 }
 function Summary({ data, day }: { data: Operations; day: string }) {
-  const rows = data.reservations.filter((r) => r.startsAt.slice(0, 10) === day);
+  const rows = data.reservations.filter(
+    (r) => localDay(r.startsAt, data.salon.timezone) === day,
+  );
   return (
     <dl className="metrics">
       <div>
@@ -225,57 +352,59 @@ function Summary({ data, day }: { data: Operations; day: string }) {
     </dl>
   );
 }
-function Customers({ data }: { data: Operations }) {
-  const [search, setSearch] = useState("");
-  const customers = data.customers.filter((c) =>
-    c.name.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr")),
-  );
-  return (
-    <>
-      <Field
-        label={t("copy.57f7119798")}
-        name="customer-search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <p className="muted">
-        {customers.length}
-        {t("copy.b064683241")}
-      </p>
-      {customers.length === 0 && <Notice>{t("copy.dab617b0a2")}</Notice>}
-      <Management resource="customers" data={{ ...data, customers }} />
-    </>
-  );
-}
 function PaymentRecords({ data }: { data: Operations }) {
+  const [filter, setFilter] = useState("");
   return (
     <>
-      <Notice>{t("copy.00b8cac858")}</Notice>
+      <Notice>{t("collection.hint")}</Notice>
       <Link className="button secondary" to="/yonetim/odeme-ayarlari">
         {t("paymentSettings.title")}
       </Link>
-      <div className="resource-list">
-        {data.reservations.map((r) => (
+      <div className="field">
+        <label htmlFor="collection-filter">{t("panel.status")}</label>
+        <select
+          id="collection-filter"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        >
+          <option value="">{t("collection.all")}</option>
+          {(["unpaid", "partial", "paid", "zero"] as const).map((value) => (
+            <option key={value} value={value}>
+              {t(`collection.${value}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <PagedList
+        key={filter}
+        items={data.reservations.filter(
+          (r) => !filter || collectionStatus(r) === filter,
+        )}
+        searchText={(r) =>
+          `${r.customer.name} ${r.serviceName} ${t(`payment.${r.paymentStatus}`)}`
+        }
+        renderItem={(r) => (
           <article className="resource-row" key={r.id}>
             <div>
               <h2>{r.customer.name}</h2>
               <p>
                 {r.id} · {formatDate(r.startsAt)}
               </p>
-              <span>{t(`payment.${r.paymentStatus}`)}</span>
+              <CollectionSummary reservation={r} />
             </div>
-            <strong>{formatMoney(r.deposit)}</strong>
+            <CollectionButton reservation={r} />
           </article>
-        ))}
-      </div>
+        )}
+      />
     </>
   );
 }
 function Reports({ data }: { data: Operations }) {
   const completed = data.reservations.filter((r) => r.status === "completed"),
-    collected = data.reservations
-      .filter((r) => r.paymentStatus === "paid")
-      .reduce((sum, r) => sum + r.deposit.amount, 0);
+    collected = data.reservations.reduce(
+      (sum, r) => sum + receivedAmount(r),
+      0,
+    );
   return (
     <>
       <p className="muted">{t("copy.e0d864ac73")}</p>
@@ -294,13 +423,15 @@ function Reports({ data }: { data: Operations }) {
           </dd>
         </div>
         <div>
-          <dt>{t("copy.0392269a2f")}</dt>
+          <dt>{t("collection.netTotal")}</dt>
           <dd>{formatMoney({ amount: collected, currency: "TRY" })}</dd>
         </div>
       </dl>
       <h2>{t("copy.edb9631310")}</h2>
-      <div className="resource-list">
-        {data.services.map((service) => (
+      <PagedList
+        items={data.services}
+        searchText={(service) => service.name}
+        renderItem={(service) => (
           <div className="resource-row" key={service.id}>
             <span>{service.name}</span>
             <strong>
@@ -311,8 +442,8 @@ function Reports({ data }: { data: Operations }) {
               {t("copy.7eb7b1f325")}
             </strong>
           </div>
-        ))}
-      </div>
+        )}
+      />
     </>
   );
 }

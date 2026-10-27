@@ -22,6 +22,7 @@ module.exports = {
       "reservations",
       "notifications",
       "operations",
+      "payments",
     ].map((name) => ({
       name: `${name}-public`,
       severity: "error",

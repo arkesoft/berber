@@ -5,6 +5,33 @@ import { ensure } from "../../kernel/errors.js";
 import { localRange } from "../scheduling/domain.js";
 import type { CatalogSnapshot } from "./contracts.js";
 export type { CatalogSnapshot } from "./contracts.js";
+export async function readPaymentSettings(sql: Sql, salonId: string) {
+  const row = (
+    await sql.query(
+      'SELECT payment_settings_version AS version, deposit_enabled AS "depositEnabled", online_payment_visible AS "onlinePaymentVisible" FROM salon.settings WHERE id=$1',
+      [salonId],
+    )
+  ).rows[0];
+  ensure(row, "NOT_FOUND", "Salon bulunamadı.", 404);
+  return s.paymentSettings.parse(row);
+}
+export async function savePaymentSettings(
+  sql: Sql,
+  salonId: string,
+  input: z.infer<typeof s.paymentSettings>,
+) {
+  const result = await sql.query(
+    "UPDATE salon.settings SET deposit_enabled=$2,online_payment_visible=$3,payment_settings_version=payment_settings_version+1 WHERE id=$1 AND payment_settings_version=$4",
+    [salonId, input.depositEnabled, input.onlinePaymentVisible, input.version],
+  );
+  ensure(
+    result.rowCount === 1,
+    "VERSION_CONFLICT",
+    "Ayarlar değişti; sayfayı yenileyin.",
+    409,
+  );
+  return readPaymentSettings(sql, salonId);
+}
 export async function readSalon(
   sql: Sql,
   salonId: string,
@@ -38,6 +65,7 @@ export async function readSalon(
     [salonId],
   );
   return {
+    paymentSettings: await readPaymentSettings(sql, salonId),
     salon: s.salon.parse(row.document),
     buffer: row.buffer_minutes,
     services: services.rows.map((x) => s.service.parse(x.document)),
@@ -100,6 +128,14 @@ export async function updateSalon(
       change.value.serviceIds.every((id) => services.some((s) => s.id === id)),
       "VALIDATION_ERROR",
       "Hizmet kaydı bulunamadı.",
+    );
+  }
+  if (change.resource === "chairs" && change.value.assignedStaffId) {
+    const catalog = await readSalon(sql, salonId);
+    ensure(
+      catalog.staff.some((staff) => staff.id === change.value.assignedStaffId),
+      "VALIDATION_ERROR",
+      "Koltuk için seçilen çalışan bulunamadı.",
     );
   }
   if (change.resource === "schedules") {

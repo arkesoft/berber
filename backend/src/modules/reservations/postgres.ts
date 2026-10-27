@@ -29,6 +29,7 @@ type Row = {
   occupied_until: Date;
   total: number;
   deposit: number;
+  received_amount: number;
   status: Booking["status"];
   payment_status: Booking["paymentStatus"];
   hold_expires_at: Date | null;
@@ -51,6 +52,7 @@ function map(row: Row): Booking {
     occupiedUntil: row.occupied_until.toISOString(),
     total: row.total,
     deposit: row.deposit,
+    receivedAmount: row.received_amount,
     status: row.status,
     paymentStatus: row.payment_status,
     holdExpiresAt: row.hold_expires_at?.toISOString() ?? null,
@@ -60,7 +62,7 @@ function map(row: Row): Booking {
 }
 export async function expireHolds(sql: Sql, salonId: string, now: string) {
   const expired = await sql.query<Row>(
-    "UPDATE reservations.bookings SET status='expired',hold_expires_at=NULL,version=version+1 WHERE salon_id=$1 AND status='pending_payment' AND hold_expires_at<=$2 RETURNING *",
+    "UPDATE reservations.bookings SET status='expired',payment_status=CASE WHEN received_amount>0 THEN 'refund_pending' ELSE payment_status END,hold_expires_at=NULL,version=version+1 WHERE salon_id=$1 AND status='pending_payment' AND hold_expires_at<=$2 RETURNING *",
     [salonId, now],
   );
   for (const row of expired.rows) {
@@ -156,7 +158,7 @@ export function bookingStore(
     },
     save: async (b) => {
       await sql.query(
-        "UPDATE reservations.bookings SET version=$3,status=$4,payment_status=$5,hold_expires_at=$6,starts_at=$7,ends_at=$8,occupied_until=$9,chair_id=$10 WHERE salon_id=$1 AND id=$2",
+        "UPDATE reservations.bookings SET version=$3,status=$4,payment_status=$5,hold_expires_at=$6,starts_at=$7,ends_at=$8,occupied_until=$9,chair_id=$10,received_amount=$11 WHERE salon_id=$1 AND id=$2",
         [
           salonId,
           b.id,
@@ -168,6 +170,7 @@ export function bookingStore(
           b.endsAt,
           b.occupiedUntil,
           b.chairId,
+          b.receivedAmount ?? 0,
         ],
       );
     },
@@ -182,6 +185,37 @@ export function bookingStore(
       return date
         ? rows.filter((b) => localDate(b.startsAt, zone) === date)
         : rows;
+    },
+    page: async (actor, query) => {
+      const zone = (await readSalon(sql, salonId)).salon.timezone;
+      const values = [
+        salonId,
+        actor.role,
+        actor.staffId,
+        actor.customerId,
+        query.date ?? null,
+        zone,
+        query.period,
+      ];
+      const where = `salon_id=$1 AND ($2='manager' OR ($2='staff' AND staff_id=$3) OR ($2='customer' AND customer_id=$4))
+        AND ($5::date IS NULL OR (starts_at AT TIME ZONE $6)::date=$5::date)
+        AND ($7='all' OR ($7='upcoming' AND status IN ('confirmed','pending_payment','in_service')) OR ($7='past' AND status NOT IN ('confirmed','pending_payment','in_service')))`;
+      const total = Number(
+        (
+          await sql.query<{ total: string }>(
+            `SELECT count(*) AS total FROM reservations.bookings WHERE ${where}`,
+            values,
+          )
+        ).rows[0]!.total,
+      );
+      const direction = query.period === "past" ? "DESC" : "ASC";
+      const items = (
+        await sql.query<Row>(
+          `SELECT * FROM reservations.bookings WHERE ${where} ORDER BY starts_at ${direction},id LIMIT $8 OFFSET $9`,
+          [...values, query.pageSize, (query.page - 1) * query.pageSize],
+        )
+      ).rows.map(map);
+      return { items, total };
     },
     event: async (b, topic) =>
       enqueue(sql, topic, { reservationId: b.id, version: b.version }),

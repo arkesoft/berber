@@ -1,4 +1,12 @@
-# Yönetici ödeme ayarları — yalnız frontend taslağı
+# Yönetici ödeme ayarları ve tahsilat
+
+27 Ekim 2026 güncellemesi: [ADR 0008](../adr/0008-manual-collections-and-payment-policy.md) ile üst bölüme kalıcı kapora ve müşteri POS görünürlüğü tercihleri eklendi. Kaydet sunucuya yazar; eski randevu tutarları değişmez. Alt banka/sağlayıcı bölümü geçici önizleme olmaya devam eder. Aşağıdaki 26 Ekim notları yalnız bu eski taslak bölümünü anlatır.
+
+`/yonetim/odemeler` ve yönetici randevu satırlarının Tahsilat düğmesi, focus ve kaydedilmemiş değişiklik koruması olan modal açar. Tutar, yöntem, alınan/kalan ve gerekçeli hata düzeltme geçmişi bulunur. Düzeltme banka iadesi yapmaz. Müşteri/çalışan özeti görebilir; sadece yönetici kayıt girer. Ücret kuruş olarak saklanır; randevu durumu ve tahsilat durumu ayrıdır. Liste durum filtresi, arama ve sayfalama sunar.
+
+Yeni doğrulamalar: `tests/e2e/collections.spec.ts`, backend PostgreSQL entegrasyon testleri. Güncel sonuçlar `docs/quality/collections-review.md` içindedir.
+
+## Tarihsel taslak kapsamı (26 Ekim)
 
 26 Ekim 2026: Kullanıcı ödeme/POS altyapısının geliştirilmesini erteledi. Sağlayıcı seçilmedi.
 

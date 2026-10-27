@@ -19,12 +19,14 @@ module.exports = {
       from: { path: "/domain/" },
       to: { path: "(react|/ui/|/api/|/mocks/|/routes/)" },
     },
-    ...["booking", "identity", "appointments", "operations"].map((name) => ({
-      name: `${name}-public-api`,
-      severity: "error",
-      from: { path: "^app/", pathNot: `^app/modules/${name}/` },
-      to: { path: `^app/modules/${name}/(?!index\\.)` },
-    })),
+    ...["booking", "identity", "appointments", "operations", "payments"].map(
+      (name) => ({
+        name: `${name}-public-api`,
+        severity: "error",
+        from: { path: "^app/", pathNot: `^app/modules/${name}/` },
+        to: { path: `^app/modules/${name}/(?!index\\.)` },
+      }),
+    ),
     {
       name: "mocks-only-at-bootstrap",
       severity: "error",

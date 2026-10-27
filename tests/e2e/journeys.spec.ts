@@ -153,13 +153,15 @@ test("manager edits a service and visits all management screens", async ({
     .click();
   await page.getByLabel("Ücret (TL)", { exact: true }).fill("700.00");
   await page.getByRole("button", { name: "Kaydet", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("kaydedildi");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Değişiklikler kaydedildi." }),
+  ).toBeVisible();
   for (const label of [
     "Çalışanlar",
     "Koltuklar",
     "Mesai ve izin",
     "Müşteriler",
-    "Kapora kayıtları",
+    "Tahsilat kayıtları",
     "Temel raporlar",
     "Salon ayarları",
   ]) {
@@ -177,8 +179,16 @@ test("staff sees own schedule and cannot enter management", async ({
     page.getByRole("heading", { name: "Günlük planım" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Hizmeti başlat" }).first().click();
-  await expect(page.getByText("Hizmet sürüyor", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .locator(".appointment-row .status")
+      .filter({ hasText: "Hizmet sürüyor" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Hizmeti tamamla" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Onayla", exact: true })
+    .click();
   await page.getByRole("link", { name: "Mola ve izinlerim" }).click();
   await expect(
     page.getByRole("heading", { name: "Mola", exact: true }),

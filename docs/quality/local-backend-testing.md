@@ -6,7 +6,13 @@
 - Backend: `http://127.0.0.1:3001`.
 - PostgreSQL: `127.0.0.1:55432`, ayrı `salon_local` veritabanı ve superuser olmayan `salon_local` rolü.
 - Otomatik entegrasyon testleri `salon_backend_test` veritabanını kullanmaya devam eder; yerel deneme kayıtları test resetinden etkilenmez.
-- Yerel ayarlar `.local/local.env`, yönetici/çalışan giriş bilgileri `.local/local-accounts.json` içindedir. Bu dosyalar git dışında tutulur; VITE değişkenlerine secret konmaz.
+- Yerel ayarlar `.local/local.env`, yönetici/çalışan/müşteri giriş bilgileri `.local/local-accounts.json` içindedir. Bu dosyalar git dışında tutulur; VITE değişkenlerine secret konmaz.
+
+## Tek komutla başlatma (Windows, mevcut yerel kurulum)
+
+Proje kökünde `npm.cmd run start:local` çalıştırın; ardından `http://127.0.0.1:5174/giris` adresini açın. Komut yerel PostgreSQL'i, API'yi, worker'ı ve frontend'i arka planda başlatır; API hazır olma ve frontend üzerinden katalog erişimini kontrol eder. Kapalı API başlatılmadan önce backend derlenir. Yeniden çalıştırıldığında bu komutun başlattığı çalışan süreçler çoğaltılmaz.
+
+Bilgisayar yeniden açıldığında aynı komutu çalıştırın. Loglar `.local/*.log` dosyalarındadır. Bu komut mevcut yerel kurulumu kullanır; veritabanını sıfırlamaz, migration veya hesap/parola değişikliği yapmaz. `5173` demo hesapları ve `5174` gerçek yerel hesapları farklıdır.
 
 Başlangıç verileri: iki çalışan, üç hizmet, iki koltuk, kurulum tarihinden itibaren 30 günlük mesai ve öğle molaları. Gerçek işletme verisi değildir. Mesailer yönetim panelinden düzenlenebilir. Randevular PostgreSQL'e yazılır ve sayfa yenilenince kaybolmaz. Misafir rezervasyonu yapılabilir; daha sonra kendi randevularını yönetmek isteyen kullanıcı önce müşteri hesabı açıp giriş yapmalıdır. Misafir OTP ile sonradan yönetim tamamlanmamıştır.
 

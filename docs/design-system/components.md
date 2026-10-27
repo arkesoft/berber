@@ -1,5 +1,7 @@
 # Bileşen davranışları
 
+27 Ekim 2026 panel güncellemesi: düzenleme, detay, ilişkili randevu ve yeniden planlama native dialog içinde açılır. Klavye odağı pencere içinde kalır ve kapatılınca açan düğmeye döner. Kirli formda Escape/kapat/iptal kayıp uyarısı verir; işlem sürerken pencere kapatılamaz. Tamamlandı ve gelmedi işlemlerinde sonuç açıklamasıyla ikinci onay vardır. Listelerde arama, filtre, 10/20/50 sayfa boyutu, toplam ve görünen aralık aynı ortak sayfalama bileşenini kullanır. Ayrıntılar: [panel incelemesi](../quality/panel-review.md).
+
 | Bileşen              | Davranış ve durumlar                                            | Erişilebilirlik                                |
 | -------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
 | Button/link          | Primary, secondary, pending, disabled                           | Native semantik, 44px, focus-visible           |

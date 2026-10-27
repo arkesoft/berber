@@ -33,14 +33,22 @@ export async function workspace(
     staff: manager
       ? catalog.staff
       : catalog.staff.filter((s) => s.id === context.actor!.staffId),
-    chairs: manager ? catalog.chairs : [],
+    chairs: manager
+      ? catalog.chairs
+      : catalog.chairs.filter(
+          (c) =>
+            !c.assignedStaffId || c.assignedStaffId === context.actor!.staffId,
+        ),
     schedules: catalog.schedules.filter(
       (s) => manager || s.staffId === context.actor!.staffId,
     ),
     customers: manager ? await listCustomers(sql, salonId) : [],
     reservations: (
       await bookingStore(sql, salonId, context).list(context.actor)
-    ).map((b) => toDto(b, context, now)),
+    ).map((b) => ({
+      ...toDto(b, context, now),
+      chairName: catalog.chairs.find((c) => c.id === b.chairId)?.name,
+    })),
   };
 }
 export async function manage(
@@ -70,9 +78,14 @@ export async function manage(
         const occupied = { startsAt: b.startsAt, endsAt: b.occupiedUntil };
         ensure(
           catalog.staff.some((s) => s.id === b.staffId && s.active) &&
-            catalog.chairs.some((c) => c.id === b.chairId && c.active),
+            catalog.chairs.some(
+              (c) =>
+                c.id === b.chairId &&
+                c.active &&
+                (!c.assignedStaffId || c.assignedStaffId === b.staffId),
+            ),
           "SLOT_CONFLICT",
-          "Aktif randevusu bulunan kaynak kapatılamaz.",
+          "Bu değişiklik aktif randevunun çalışan veya koltuk atamasını bozuyor. Önce ilgili randevuyu düzenleyin.",
           409,
         );
         const shifts = catalog.intervals.filter((s) => s.staffId === b.staffId);
