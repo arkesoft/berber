@@ -23,5 +23,6 @@ export function useAvailability(
     enabled: Boolean(serviceId && staffId && date),
     staleTime: 0,
     refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 }

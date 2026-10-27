@@ -156,7 +156,10 @@ export class Reservation {
     );
     if (action === "reschedule") {
       ensure(newSlot, "VALIDATION_ERROR", "Yeni saat gerekli.");
-      Object.assign(b, newSlot);
+      b.startsAt = newSlot.startsAt;
+      b.endsAt = newSlot.endsAt;
+      b.occupiedUntil = newSlot.occupiedUntil;
+      b.chairId = newSlot.chairId;
     } else {
       b.status = (
         {

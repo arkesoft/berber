@@ -23,6 +23,7 @@
     --color-accent: #555900;
     --color-selected: #f1f5cc;
     --color-danger: #982b31;
+    --color-slot-busy: #fbecee;
     --color-success: #2c6036;
     --color-warning: #745407;
     --color-focus: #555900;
@@ -65,6 +66,7 @@
     --color-accent: var(--brand-lime);
     --color-selected: #32361d;
     --color-danger: #ffb0b5;
+    --color-slot-busy: #42272b;
     --color-success: #afd5b5;
     --color-warning: #edd582;
     --color-focus: var(--brand-lime);

@@ -146,7 +146,7 @@ function Shell() {
                 localStorage.setItem("theme", next);
               }}
             >
-              {theme === "light" ? t("copy.a9a9097f60") : t("copy.84b4de7467")}
+              {theme === "light" ? t("copy.0f66572e6d") : t("copy.7f67fdef00")}
             </Button>
             {auth.data?.user ? (
               <Button variant="quiet" onClick={() => void logout()}>

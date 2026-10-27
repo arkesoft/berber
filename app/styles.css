@@ -706,6 +706,87 @@
     background: var(--color-surface);
     font-variant-numeric: tabular-nums;
   }
+  .slot-picker .slot-grid {
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  }
+  .slot-label {
+    display: grid;
+    gap: var(--space-1);
+    text-align: center;
+  }
+  .slot-available .slot-label > span {
+    color: var(--color-success);
+  }
+  .slot-busy,
+  .slot-busy:hover {
+    background: var(--color-slot-busy);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    cursor: not-allowed;
+  }
+  .slot-unavailable,
+  .slot-past,
+  .slot-unavailable:hover,
+  .slot-past:hover {
+    background: var(--color-raised);
+    color: var(--color-muted);
+    border-color: var(--color-border);
+    cursor: not-allowed;
+  }
+  .slot-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-6);
+    margin-block: var(--space-4);
+  }
+  .slot-legend > span {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .slot-swatch {
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--color-control);
+    flex: 0 0 auto;
+  }
+  .slot-swatch-available {
+    background: var(--color-surface);
+    border-color: var(--color-success);
+  }
+  .slot-swatch-selected {
+    background: var(--color-selected);
+    border-color: var(--color-text);
+  }
+  .slot-swatch-busy {
+    background: var(--color-slot-busy);
+    border-color: var(--color-danger);
+  }
+  .slot-swatch-unavailable {
+    background: var(--color-raised);
+  }
+  .slot-help {
+    margin-block: var(--space-4);
+  }
+  .slot-help summary {
+    cursor: pointer;
+    min-height: 44px;
+    padding-block: var(--space-2);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .slot-help dl {
+    display: grid;
+    gap: var(--space-3);
+    margin-block: var(--space-4);
+  }
+  .slot-help dt {
+    font-weight: 600;
+  }
+  .slot-help dd {
+    margin: 0;
+    color: var(--color-muted);
+  }
   .checkbox {
     display: flex;
     gap: var(--space-3);

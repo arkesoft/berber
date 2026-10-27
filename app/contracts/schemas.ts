@@ -46,6 +46,7 @@ export const salon = z.object({
   timezone: z.string().min(1),
   currency: z.literal("TRY"),
   bookingDays: z.number().int().min(1).max(90),
+  slotIntervalMinutes: z.number().int().min(5).max(120).default(15),
 });
 export const paymentSettings = z.object({
   version: z.number().int().positive(),
@@ -67,6 +68,9 @@ export const slot = z.object({
 });
 export const availability = z.object({
   slots: z.array(slot),
+  unavailableSlots: z
+    .array(slot.extend({ status: z.enum(["busy", "unavailable", "past"]) }))
+    .default([]),
   timezone: z.string(),
   fetchedAt: instant,
 });

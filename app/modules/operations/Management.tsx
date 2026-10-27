@@ -241,6 +241,13 @@ export function Management({
                   )?.name ?? t("panel.sharedChair")}
                 </p>
               )}
+              {resource === "salon" && (
+                <p>
+                  {t("slots.intervalSummary", {
+                    minutes: data.salon.slotIntervalMinutes,
+                  })}
+                </p>
+              )}
               {resource === "staff" && (
                 <p className="muted">
                   {t("panel.chairsForStaff", {
@@ -448,6 +455,12 @@ function Editor({
       ...item,
       ...values,
       active: values.active === "true",
+      ...(resource === "salon"
+        ? {
+            slotIntervalMinutes: Number(values.slotIntervalMinutes),
+            bookingDays: Number(values.bookingDays),
+          }
+        : {}),
       ...(resource === "staff" ? { serviceIds } : {}),
       ...(resource === "chairs"
         ? { assignedStaffId: values.assignedStaffId || null }
@@ -597,6 +610,24 @@ function Editor({
         )}
         {resource === "salon" && (
           <>
+            <Field
+              label={t("slots.interval")}
+              type="number"
+              min={5}
+              max={120}
+              step={1}
+              {...form.register("slotIntervalMinutes", {
+                required: true,
+                min: 5,
+                max: 120,
+              })}
+              hint={t("slots.intervalHint")}
+              error={
+                form.formState.errors.slotIntervalMinutes
+                  ? t("slots.intervalError")
+                  : undefined
+              }
+            />
             {field("description", t("copy.7f9f330475"))}
             {field("address", t("copy.32c6bebf1c"))}
             {field("phone", t("copy.fa6906d76e"), "tel")}

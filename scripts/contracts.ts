@@ -111,7 +111,7 @@ const document = {
   openapi: "3.1.0",
   info: {
     title: "Salon API Contract",
-    version: "1.3.0",
+    version: "1.4.0",
     description:
       "Single-salon API. PostgreSQL backend and frontend mocks share schemas. Payment-provider selection and implementation are deferred. The payment endpoint describes the existing frontend demo only.",
   },

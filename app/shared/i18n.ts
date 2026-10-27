@@ -1,9 +1,11 @@
 import { uiMessages } from "./locales/tr";
+import { slotMessages } from "./locales/slots.tr";
 import { collectionMessages } from "./locales/collections.tr";
 import { panelMessages } from "./locales/panels.tr";
 import { landingMessages } from "./locales/landing.tr";
 import { paymentSettingsMessages } from "./locales/payment-settings.tr";
 const tr = {
+  ...slotMessages,
   ...collectionMessages,
   ...panelMessages,
   ...uiMessages,
